@@ -27,14 +27,14 @@ export function mount(main) {
     el('div', { class: 'panel-body stack' },
       file, drop, preview,
       el('div', { class: 'field' }, el('label', { for: 'ai-camera' }, 'Where was it taken?'), camera,
-        el('p', { class: 'hint' }, "The detection is placed at this camera station's position and compared with that area's safety zones.")),
+      ),
       el('fieldset', { class: 'choice-group' }, el('legend', { class: 'label' }, 'Analysis'),
         el('label', { class: 'choice' }, modeModel, el('span', {}, icon('cpu', 'icon icon-sm'), 'Run the AI model (real inference)')),
         el('label', { class: 'choice' }, modeSim, el('span', {}, icon('flask', 'icon icon-sm'), 'Simulated detection (demo)'))),
       simFields, err, el('div', { class: 'form-actions' }, submit)));
 
   main.append(
-    el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'AI monitor'), el('p', { class: 'sub' }, 'Upload a camera image or wildlife photo. The system detects the animal, then scores risk by species, distance to safety zones and who is likely nearby.'))),
+    el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'Check a photo'), el('p', { class: 'sub' }, 'Upload a wildlife photo to identify the animal and its risk.'))),
     statusBox,
     el('div', { class: 'cols-2 section' }, form, resultBox),
   );
@@ -134,14 +134,13 @@ export function mount(main) {
       }
       clear(statusBox, model.available
         ? el('div', { class: 'alert alert-info' }, icon('cpu'), el('div', { class: 'grow' },
-            el('strong', {}, `Model installed: ${model.modelId}. `), `It can recognise: ${model.recognises.join(', ') || 'no wildlife species'}. `,
-            model.cannotRecognise.length ? `It cannot recognise ${model.cannotRecognise.join(', ')} — those need a wildlife-specific model (drop one in via scripts/export_model.py). Until then, use simulated detections for them.` : ''))
-        : el('div', { class: 'alert alert-warn' }, icon('alert'), el('div', { class: 'grow' }, el('strong', {}, 'No AI model installed. '), `${model.reason || ''} You can still demonstrate the workflow with simulated detections, which are labelled everywhere.`)));
+            el('strong', {}, 'AI model ready. '), `Recognises ${model.recognises.join(', ') || 'no wildlife species'}.`))
+        : el('div', { class: 'alert alert-warn' }, icon('alert'), el('div', { class: 'grow' }, el('strong', {}, 'No AI model installed. '), 'You can still try it with a simulated detection.')));
     } catch (e) {
       clear(statusBox, el('div', { class: 'alert alert-error' }, icon('alert'), e.message));
     }
   }
   loadStatus();
-  clear(resultBox, el('div', { class: 'panel' }, el('div', { class: 'empty' }, icon('cpu'), el('strong', {}, 'Results appear here'), el('p', {}, 'Each analysis is saved as a detection. Medium risk or above opens an incident and alerts rangers.'))));
+  clear(resultBox, el('div', { class: 'panel' }, el('div', { class: 'empty' }, icon('cpu'), el('strong', {}, 'Results appear here'), el('p', {}, 'Medium risk or above alerts rangers.'))));
   return {};
 }

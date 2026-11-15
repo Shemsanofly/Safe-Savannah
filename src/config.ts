@@ -61,7 +61,7 @@ const EnvSchema = z.object({
   STALE_FEED_SECONDS: z.coerce.number().positive().default(5),
 
   /** africastalking = real Africa's Talking API (sandbox or live); mock = labelled simulation, nothing leaves the laptop. */
-  SMS_PROVIDER: z.enum(['mock', 'africastalking']).default('mock'),
+  SMS_PROVIDER: z.enum(['mock', 'africastalking']).default('africastalking'),
   /** Voice: africastalking needs AT_VOICE_NUMBER (a provisioned AT number); otherwise calls are simulated and labelled. */
   VOICE_PROVIDER: z.enum(['simulated', 'africastalking']).default('simulated'),
   AT_VOICE_NUMBER: z.string().optional(),

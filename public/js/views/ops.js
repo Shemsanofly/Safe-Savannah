@@ -29,9 +29,9 @@ export function mount(main, ctx) {
 
   main.append(
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'Operations'), el('p', { class: 'sub' }, 'Live wildlife risk and tourist emergencies across your parks.')),
+      el('div', {}, el('h1', {}, 'Live map'), el('p', { class: 'sub' }, 'Open alerts and emergencies.')),
       el('div', { class: 'page-actions' }, areaSel)),
-    el('div', { class: 'radio-reminder' }, icon('radio'), el('span', {}, el('strong', {}, 'Radio first. '), 'Use this screen alongside your radio and phone procedures. Verify every alert on the ground; a quiet map never means an area is safe.')),
+    el('div', { class: 'radio-reminder' }, icon('radio'), el('span', {}, el('strong', {}, 'Radio first. '), 'Always verify alerts on the ground.')),
     el('div', { class: 'ops-grid' },
       el('section', { class: 'panel', 'aria-labelledby': 'map-title' },
         el('div', { class: 'panel-head' }, el('h2', { id: 'map-title' }, icon('map'), 'Map'), el('div', { class: 'row' }, detBtn, soundBtn)),
@@ -147,9 +147,8 @@ export function mount(main, ctx) {
         await loadScenarios();
       }));
       clear(scenarioBox, el('details', { class: 'panel section' },
-        el('summary', { class: 'panel-head' }, el('h2', {}, icon('flask'), 'Demo scenarios (simulated)'), el('span', { class: 'badge tone-sim' }, 'Creates SIMULATED detections')),
+        el('summary', { class: 'panel-head' }, el('h2', {}, icon('flask'), 'Demo scenarios'), el('span', { class: 'badge tone-sim' }, 'Simulated')),
         el('div', { class: 'panel-body stack' },
-          el('p', { class: 'small' }, 'Each scenario feeds a labelled simulated detection through the real risk engine, alerting and messaging. Harmless species near people stay low risk on purpose.'),
           el('div', { class: 'row' }, pauseBtn, status),
           el('div', { class: 'glossary' }, s.scenarios.map((sc) => {
             const b = el('button', { type: 'button', class: 'btn btn-sm' }, icon('play', 'icon icon-sm'), el('span', {}, 'Run'));
@@ -160,7 +159,7 @@ export function mount(main, ctx) {
               clear(st, `Risk ${r.risk.level.toUpperCase()}${r.incident ? ` → ${r.incident.ref} ${r.incident.created ? 'opened' : r.incident.escalated ? 'escalated' : 'updated'}` : ' — logged, no alert'}`);
               await Promise.all([load(), store.refresh()]);
             }));
-            return el('div', { class: 'gloss-item' }, el('div', { class: 'stack' }, b), el('div', {}, el('strong', {}, sc.label), el('p', { class: 'small muted' }, sc.description), st));
+            return el('div', { class: 'gloss-item' }, el('div', { class: 'stack' }, b), el('div', {}, el('strong', {}, sc.label), el('div', {}, st)));
           })))));
     } catch {
       clear(scenarioBox);

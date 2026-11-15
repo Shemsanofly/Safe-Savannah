@@ -120,7 +120,7 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
     expect((await req('sup', 'GET', '/api/overview')).json().cameras[0].lastError).toContain('connection refused');
     expect(o.zones[0].displayState).toBe('unknown');
     expect(o.zones[0].polygon).toHaveLength(4);
-    expect(o.sms.mode).toBe('mock');
+    expect(o).not.toHaveProperty('sms');
     expect(o.permissions.canExport).toBe(false);
   });
 
@@ -217,8 +217,8 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
       expect(r.body).not.toContain('700001234');
     }
     expect(off.json().technical).toBeNull();
-    expect(off.json().notifications.recipients[0]).toEqual({ alias: 'duty', number: '+255•••••••34' });
-    expect(sup.json().technical).toMatchObject({ deliveryReportsConfigured: true });
+    expect(off.json()).not.toHaveProperty('notifications');
+    expect(sup.json().technical).toMatchObject({ sessionHours: expect.any(Number) });
     expect(off.json().timeZone).toBe(cfg.TIMEZONE);
   });
 
@@ -262,25 +262,16 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
     expect((await req('sup', 'POST', '/api/operators/off/pin', { pin: 'abcd' })).statusCode).toBe(400);
   });
 
-  it('officers can work incidents but not use demo controls', async () => {
+  it('officers can work incidents', async () => {
     const { c } = await seed();
     expect((await req('off', 'POST', `/api/events/${c.id}/acknowledge`, {})).json().event.acknowledged_by).toBe('off');
     const empty = await req('off', 'POST', `/api/events/${c.id}/actions`, { type: 'close', note: '   ' });
     expect(empty.statusCode).toBe(400);
     expect(empty.json().message).toMatch(/note is required/);
-    expect((await req('off', 'POST', '/api/demo/uplink', { state: 'down' })).statusCode).toBe(403);
-    expect((await req('sup', 'POST', '/api/demo/uplink', { state: 'down' })).statusCode).toBe(200);
   });
 
-  it('notifications list groups SMS states', async () => {
-    await seed();
-    await db.query(`UPDATE notification_jobs SET status = 'unknown' WHERE id = (SELECT min(id) FROM notification_jobs)`);
-    const all = (await req('off', 'GET', '/api/notifications')).json();
-    expect(all.total).toBe(4);
-    expect(all.provider.mode).toBe('mock');
-    expect(all.countsByStatus).toMatchObject({ unknown: 1, pending: 3 });
-    const problems = (await req('off', 'GET', '/api/notifications?group=problem')).json();
-    expect(problems.items).toHaveLength(1);
-    expect(problems.items[0]).toMatchObject({ status: 'unknown', ref: expect.stringMatching(/^SS-/) });
+  it('message screens are gone: SMS are only visible in the Africa\'s Talking sandbox', async () => {
+    for (const path of ['/api/notifications', '/api/comms']) expect((await req('sup', 'GET', path)).statusCode).toBe(404);
+    expect((await req('sup', 'POST', '/api/demo/uplink', { state: 'down' })).statusCode).toBe(404);
   });
 });

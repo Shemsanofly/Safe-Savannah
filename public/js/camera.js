@@ -202,10 +202,7 @@ export function createCameraFeed() {
 
     clear(meta1,
       metaItem('Feed', f.label, f.explain),
-      metaItem('Last frame', camera.lastFrameAt ? ago(camera.lastFrameAt) : 'none yet', 'When the vision worker last processed a frame.'),
-      metaItem('Processing rate', camera.processedFps ? `${camera.processedFps.toFixed(1)} frames/s` : '—', 'Frames analysed per second.'),
-      metaItem('Detection time', camera.detectorKind === 'simulated' ? 'n/a (simulated)' : camera.inferenceMs ? `${Math.round(camera.inferenceMs)} ms per frame` : '—', 'Time the detector takes per frame.'),
-      metaItem('Frames skipped', String(camera.droppedFrames ?? 0), 'Older frames are skipped when the detector falls behind, so alerts are never delayed by a backlog.'));
+      metaItem('Last frame', camera.lastFrameAt ? ago(camera.lastFrameAt) : 'none yet', 'When the vision worker last processed a frame.'),);
 
     const z = zones[0];
     if (z) {

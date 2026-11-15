@@ -14,7 +14,7 @@ export function mount(main, ctx) {
 
   main.append(
     el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'Wildlife detections'),
-      el('p', { class: 'sub' }, 'Every sighting is logged and scored. Only medium risk and above become incidents.'))),
+      el('p', { class: 'sub' }, 'Every animal sighting and its risk.'))),
     el('div', { class: 'filters' }, el('div', { class: 'filters-row' },
       field('d-species', 'Species', species), field('d-risk', 'Risk', risk), field('d-analysis', 'Detection source', analysis), field('d-area', 'Area', area))),
     results, pager);
@@ -56,7 +56,6 @@ export function mount(main, ctx) {
           el('td', { 'data-label': 'Risk' }, riskBadge(x.risk_level)),
           el('td', { 'data-label': 'Source' }, el('div', { class: 'row' },
             x.analysis === 'simulated' ? el('span', { class: 'badge tone-sim' }, icon('flask'), 'Simulated') : el('span', { class: 'badge tone-real' }, icon('cpu'), 'Real model'),
-            el('span', { class: 'badge tone-muted' }, x.input === 'upload' ? 'Uploaded photo' : x.input === 'camera' ? 'Live camera' : 'Simulated camera'),
             x.demo ? demoBadge() : null,
             x.imageUrl ? el('a', { href: x.imageUrl, target: '_blank', rel: 'noopener', class: 'small' }, 'Photo') : null)),
           el('td', { 'data-label': 'Incident' }, x.event_id ? el('a', { href: `#/incidents/${x.event_id}`, class: 'strong' }, `SS-${String(x.event_id).padStart(3, '0')}`) : el('span', { class: 'muted' }, 'none'))))))));

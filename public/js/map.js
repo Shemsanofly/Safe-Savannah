@@ -109,13 +109,10 @@ export function escapeHtml(s) {
 
 export function legend() {
   return el('div', { class: 'map-legend', 'aria-label': 'Map legend' },
-    el('span', {}, el('i', { class: 'lg-swatch', style: null, dataset: { c: 'high' } }), 'High-sensitivity zone'),
-    el('span', {}, el('i', { class: 'lg-swatch lg-med' }), 'Medium'),
-    el('span', {}, el('i', { class: 'lg-swatch lg-low' }), 'Low'),
+    el('span', {}, el('i', { class: 'lg-swatch', dataset: { c: 'high' } }), 'Safety zone'),
     el('span', {}, el('i', { class: 'lg-dot lg-crit' }), 'Critical'),
     el('span', {}, el('i', { class: 'lg-dot lg-hi' }), 'High'),
     el('span', {}, el('i', { class: 'lg-dot lg-me' }), 'Medium'),
-    el('span', {}, el('i', { class: 'lg-dot lg-lo' }), 'Low / none'),
     el('span', {}, icon('siren', 'icon icon-sm'), 'SOS'),
-    el('span', {}, icon('camera', 'icon icon-sm'), 'Camera (purple = simulated)'));
+    el('span', {}, icon('camera', 'icon icon-sm'), 'Camera'));
 }

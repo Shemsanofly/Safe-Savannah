@@ -1,7 +1,7 @@
 // Incident detail: evidence, ownership, actions, SMS history and a chronological activity log.
 import { age, api, BOOT, clear, confirmDialog, el, fmtDateTime, fmtDuration, fmtTime, icon, initials, runAction, uid, validateRequired } from '../lib.js';
 import {
-  ACTION, CHANNEL, EMERGENCY, INCIDENT, RESENDABLE, SMS, demoBadge, incidentBadge, kindBadge, riskBadge, smsActionHint, smsBadge, smsDetail, sourceBadge, SOURCE,
+  ACTION, CHANNEL, EMERGENCY, INCIDENT, SMS, demoBadge, incidentBadge, kindBadge, riskBadge, sourceBadge, SOURCE,
 } from '../status.js';
 import { createMap } from '../map.js';
 import * as store from '../store.js';
@@ -31,7 +31,6 @@ export function mount(main, ctx) {
   const explainer = el('div', { class: 'status-explainer', role: 'status' });
   const evidence = el('div', {});
   const actionPanel = el('div', { class: 'action-panel' });
-  const smsBox = el('div', {});
   const timeline = el('ol', { class: 'timeline' });
 
   main.append(
@@ -48,10 +47,8 @@ export function mount(main, ctx) {
       el('div', { class: 'stack' },
         el('section', { class: 'panel', 'aria-labelledby': 'act-title' },
           el('div', { class: 'panel-head' }, el('h2', { id: 'act-title' }, icon('user'), 'Ownership & actions')),
-          el('div', { class: 'panel-body' }, actionPanel)),
-        el('section', { class: 'panel', 'aria-labelledby': 'sms-title' },
-          el('div', { class: 'panel-head' }, el('h2', { id: 'sms-title' }, icon('sms'), 'Messages & calls')),
-          el('div', { class: 'panel-body' }, smsBox)))),
+          el('div', { class: 'panel-body' }, actionPanel)))),
+
   );
   clear(head, el('div', {}, el('h1', {}, `Incident`), el('p', { class: 'sub' }, 'Loading…')));
 
@@ -104,8 +101,7 @@ export function mount(main, ctx) {
       lastEvKey = evKey;
     }
     renderActions(e);
-    if (!smsBox.querySelector('[aria-busy="true"]')) renderSms(e);
-    const tlKey = JSON.stringify(data.timeline);
+    const tlKey = JSON.stringify(data.timeline.filter((t) => t.kind === 'action'));
     if (tlKey !== lastTlKey) {
       renderTimeline();
       lastTlKey = tlKey;
@@ -334,61 +330,14 @@ export function mount(main, ctx) {
     });
   }
 
-  // ---------------------------------------------------------------- SMS
-  function renderSms(e) {
-    const active = e.status === 'open' || e.status === 'acknowledged';
-    const jobs = data.notifications;
-    if (!jobs.length) {
-      clear(smsBox, el('div', { class: 'empty' }, icon('sms'), el('strong', {}, 'No SMS for this incident'),
-        el('p', {}, e.source === 'synthetic' ? 'No duty number was configured when this test incident was created.' : 'No SMS job was created for this alert.')));
-      return;
-    }
-    clear(smsBox,
-      el('p', { class: 'small muted' }, 'Accepted by provider ≠ delivered ≠ read. Acknowledgement in this app is the only confirmation that someone took ownership.'),
-      jobs.map((j) => {
-        const hint = smsActionHint(j);
-        const isMock = j.provider === 'mock';
-        const resend = RESENDABLE.has(j.status) && active
-          ? el('button', { type: 'button', class: 'btn btn-sm' }, icon('send', 'icon icon-sm'), el('span', {}, 'Resend'))
-          : null;
-        const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
-        resend?.addEventListener('click', async () => {
-          const ok = await confirmDialog({
-            title: 'Resend this SMS?',
-            body: j.status === 'unknown'
-              ? 'The first message may already have arrived. Check the duty phone first — if it did arrive, resending sends a duplicate.'
-              : 'A new attempt will be queued for the same recipient.',
-            confirmLabel: 'Resend SMS',
-          });
-          if (!ok) return;
-          await runAction(resend, status, async () => {
-            await api.post(`/api/notifications/${j.id}/resend`);
-            await Promise.all([load(), store.refresh()]);
-          }, { success: 'SMS re-queued.' });
-        });
-        return el('div', { class: 'sms-job' },
-          el('div', { class: 'sms-head' },
-            el('div', { class: 'row' }, el('span', { class: 'badge tone-muted' }, icon(j.channel === 'voice' ? 'phone' : 'sms'), j.channel === 'voice' ? 'Voice call' : 'SMS'), el('strong', {}, `To ${j.recipient_alias}`), smsBadge(j.status), isMock ? el('span', { class: 'badge tone-mock' }, 'Mock — not sent to a phone') : j.provider === 'simulated-voice' ? el('span', { class: 'badge tone-mock' }, 'Simulated call — no phone rang') : null),
-            el('div', { class: 'row' }, resend, status)),
-          el('p', { class: 'sms-explain' }, smsDetail(j)),
-          hint ? el('div', { class: `alert ${['retry_wait'].includes(j.status) ? 'alert-info' : 'alert-warn'}` }, icon('info'), el('span', {}, hint)) : null,
-          j.last_error && !['accepted', 'delivered'].includes(j.status) ? el('p', { class: 'small muted' }, `Last error: ${j.last_error}`) : null,
-          j.message_body ? el('div', { class: 'sms-body', 'aria-label': 'Message text' }, j.message_body) : null,
-          j.attemptLog.length ? el('details', {}, el('summary', { class: 'small strong' }, `${j.attemptLog.length} send attempt${j.attemptLog.length === 1 ? '' : 's'}`),
-            el('div', { class: 'table-wrap', style: null }, el('table', { class: 'data' },
-              el('thead', {}, el('tr', {}, ['Time', 'Result', 'Detail'].map((h) => el('th', { scope: 'col' }, h)))),
-              el('tbody', {}, j.attemptLog.map((a) => el('tr', {}, el('td', {}, fmtTime(a.finished_at)),
-                el('td', {}, attemptLabel(a.outcome)), el('td', { class: 'small' }, [a.http_status ? `HTTP ${a.http_status}. ` : '', a.detail || '—']))))))) : null);
-      }));
-  }
-
   function attemptLabel(outcome) {
     return { accepted: 'Accepted', transient: 'Not sent — will retry', ambiguous: 'Unknown outcome', rejected: 'Rejected' }[outcome] || outcome;
   }
 
   // ---------------------------------------------------------------- timeline
   function renderTimeline() {
-    const items = data.timeline.map((t) => {
+    // People's actions only: message delivery details are handled by Africa's Talking, not shown here.
+    const items = data.timeline.filter((t) => t.kind === 'action').map((t) => {
       let ic = 'info';
       let tone = '';
       let title = '';

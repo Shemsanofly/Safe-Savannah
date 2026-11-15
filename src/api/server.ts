@@ -14,8 +14,8 @@ import type { Db } from '../db/pool.js';
 import { eventRef } from '../domain/eventRef.js';
 import type { ZoneConfig } from '../domain/types.js';
 import { loadZones } from '../domain/zones.js';
-import { getMockUplink, setMockUplink } from '../notify/mock.js';
-import { applyDeliveryReport, requestResend } from '../notify/outbox.js';
+import { getMockUplink } from '../notify/mock.js';
+import { applyDeliveryReport } from '../notify/outbox.js';
 import { liveFramePath, liveMetaPath } from '../paths.js';
 import { loadDashboard, type DashboardEvent, type DashboardSnapshot } from '../store/dashboard.js';
 import { acknowledgeEvent, addEventAction, DomainError, getEvent } from '../store/events.js';
@@ -24,8 +24,6 @@ import {
   getIncidentDetail,
   IncidentFiltersSchema,
   listIncidents,
-  listNotifications,
-  NotificationFiltersSchema,
   reportSummary,
   ReportRangeSchema,
 } from '../store/incidents.js';
@@ -133,20 +131,11 @@ export function permissions(op: Operator, cfg: AppConfig) {
     canExport: admin,
     canManageOperators: admin,
     canViewTechnical: admin,
-    canUseDemoControls: admin && cfg.DEMO_CONTROLS && cfg.SMS_PROVIDER === 'mock',
     canRunSimulations: admin && cfg.SIMULATOR_ENABLED,
     canManageZones: admin,
   };
 }
 
-function smsProviderInfo(cfg: AppConfig) {
-  if (cfg.SMS_PROVIDER === 'mock') return { provider: 'mock', mode: 'mock' as const, label: 'Mock SMS (no real messages)' };
-  return {
-    provider: 'africastalking',
-    mode: cfg.AT_ENVIRONMENT,
-    label: cfg.AT_ENVIRONMENT === 'sandbox' ? "Africa's Talking sandbox (simulator only)" : "Africa's Talking (live SMS)",
-  };
-}
 
 /** Routes that external providers call. Mounted on the main app AND, optionally, on a webhook-only listener. */
 async function registerWebhooks(app: FastifyInstance, cfg: AppConfig, db: Db): Promise<void> {
@@ -376,12 +365,6 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     const cameras = camerasView(snap, now, perms.canViewTechnical);
     const cameraState = new Map(cameras.map((c) => [c.id, c.feedState]));
     const active = snap.events.filter((e) => e.status === 'open' || e.status === 'acknowledged');
-    const smsCounts = await db.query<{ status: string; n: number }>(
-      `SELECT j.status, count(*)::int AS n FROM notification_jobs j JOIN events e ON e.id = j.event_id
-        WHERE e.status IN ('open', 'acknowledged') OR j.status IN ('pending', 'sending', 'retry_wait')
-        GROUP BY j.status`,
-    );
-    const byStatus = Object.fromEntries(smsCounts.rows.map((r) => [r.status, r.n]));
     return {
       serverTime: new Date(now).toISOString(),
       operator: req.operator,
@@ -406,14 +389,6 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
       })),
       zoneGeometry: zones.map((z) => ({ cameraId: z.cameraId, zoneId: z.id, label: z.label, polygon: z.polygon })),
       activeIncidents: active.map(eventView),
-      sms: {
-        ...smsProviderInfo(cfg),
-        mockUplink: cfg.SMS_PROVIDER === 'mock' ? await getMockUplink(db) : null,
-        queued: (byStatus.pending ?? 0) + (byStatus.sending ?? 0) + (byStatus.retry_wait ?? 0),
-        retrying: byStatus.retry_wait ?? 0,
-        needsAttention: (byStatus.unknown ?? 0) + (byStatus.failed ?? 0) + (byStatus.delivery_failed ?? 0),
-        lastProviderResult: snap.lastProviderResult,
-      },
       lastOperatorActionAt: snap.lastOperatorActionAt,
       permissions: perms,
     };
@@ -558,37 +533,6 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     return { event: { ...result.event, ref: eventRef(result.event.id) }, action: result.action, duplicate: result.duplicate };
   });
 
-  // ---- notifications ----------------------------------------------------
-  app.get('/api/notifications', { preHandler: requireOperator }, async (req) => {
-    const f = NotificationFiltersSchema.parse(req.query);
-    const result = await listNotifications(db, f);
-    const mock =
-      cfg.SMS_PROVIDER === 'mock'
-        ? (await db.query('SELECT id, recipient_alias, body, created_at FROM mock_sms_messages ORDER BY id DESC LIMIT 20')).rows
-        : [];
-    return {
-      ...result,
-      items: result.items.map((j: { event_id: number }) => ({ ...j, ref: eventRef(j.event_id) })),
-      provider: smsProviderInfo(cfg),
-      mockMessages: mock,
-    };
-  });
-
-  app.post('/api/notifications/:id/resend', { preHandler: requireOperator }, async (req) => {
-    const { id } = IdParams.parse(req.params);
-    const job = await requestResend(db, id, req.operator!.id);
-    return { job };
-  });
-
-  app.post('/api/demo/uplink', { preHandler: requireOperator }, async (req, reply) => {
-    if (!permissions(req.operator!, cfg).canUseDemoControls) {
-      return reply.code(cfg.DEMO_CONTROLS && cfg.SMS_PROVIDER === 'mock' ? 403 : 404).send({ error: 'forbidden', message: 'Demo controls are not available to this account.' });
-    }
-    const { state } = z.object({ state: z.enum(['up', 'down', 'timeout']) }).parse(req.body);
-    await setMockUplink(db, state);
-    return { mockUplink: state };
-  });
-
   // ---- reports ----------------------------------------------------------
   app.get('/api/reports/summary', { preHandler: requireOperator }, async (req) => {
     const range = ReportRangeSchema.parse(req.query);
@@ -601,7 +545,6 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     const snap = await loadDashboard(db, { recentLimit: 0 });
     const cam = snap.cameras.find((c) => c.id === cfg.CAMERA_ID);
     const det = cam ? parseDetector(cam.detector) : { kind: cfg.DETECTOR === 'onnx' ? 'inference' : 'simulated', model: '' };
-    const sms = smsProviderInfo(cfg);
     return {
       camera: { id: cfg.CAMERA_ID, label: cfg.CAMERA_LABEL, sourceKind: cam?.source_kind ?? null, loopsReplay: cfg.CAMERA_LOOP },
       detector: {
@@ -615,26 +558,13 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
       },
       zones: zones.map((z) => ({ id: z.id, label: z.label, cameraId: z.cameraId, vertices: z.polygon.length })),
       timeZone: cfg.TIMEZONE,
-      notifications: {
-        ...sms,
-        testMode: cfg.SMS_TEST_MODE,
-        recipients: cfg.recipients.map((r) => ({ alias: r.alias, number: maskNumber(r.number) })),
-        freshnessSeconds: cfg.SMS_FRESHNESS_SECONDS,
-      },
       technical: perms.canViewTechnical
         ? {
             cameraSource: describeSource(cfg.CAMERA_SOURCE),
             detectorModel: det.model || null,
             maxFrameGapMs: cfg.MAX_FRAME_GAP_MS,
-            retryCapSeconds: cfg.SMS_RETRY_CAP_SECONDS,
-            smsTimeoutMs: cfg.SMS_TIMEOUT_MS,
-            senderIdConfigured: !!cfg.AT_SENDER_ID,
-            deliveryReportsConfigured: !!cfg.WEBHOOK_TOKEN,
-            webhookListener: cfg.WEBHOOK_PORT ? `${cfg.WEBHOOK_HOST}:${cfg.WEBHOOK_PORT}` : null,
-            ussdEnabled: cfg.USSD_ENABLED,
             sessionHours: cfg.SESSION_HOURS,
             secureCookies: cfg.COOKIE_SECURE,
-            demoControls: cfg.DEMO_CONTROLS,
           }
         : null,
       editableHere: ['operators'],

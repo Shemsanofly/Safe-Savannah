@@ -19,8 +19,6 @@ import {
 } from '../store/platform.js';
 import { analyseImage, annotateUpload, getImageDetector, modelStatus, normaliseUpload } from '../vision/imageAnalysis.js';
 import { touristPage } from './pages.js';
-import { handleUssd } from './ussd.js';
-import { handleVoice } from './voiceWebhook.js';
 
 const TOURIST_COOKIE = 'ss_tourist';
 
@@ -114,7 +112,6 @@ export async function registerPlatformRoutes(
     tourist: req.tourist,
     feed: await touristFeed(db, req.tourist!),
     emergencyLine: cfg.EMERGENCY_LINE,
-    smsMode: cfg.SMS_PROVIDER === 'mock' ? 'simulated' : cfg.AT_ENVIRONMENT,
     serverTime: new Date().toISOString(),
     };
   });
@@ -340,49 +337,6 @@ export async function registerPlatformRoutes(
   app.get('/api/stats', { preHandler: requireStaff }, async (req) => {
     const { days } = z.object({ days: z.coerce.number().int().min(1).max(366).default(14) }).parse(req.query);
     return platformStats(db, days, cfg.TIMEZONE);
-  });
-
-  // ---------------------------------------------------------------- communications log + simulators
-  app.get('/api/comms', { preHandler: requireStaff }, async (req) => {
-    const q = z.object({ channel: z.enum(['sms', 'voice']).optional(), recipient: z.enum(['ranger', 'tourist', 'duty', 'admin']).optional() }).parse(req.query);
-    const [jobs, calls, sessions] = await Promise.all([
-      db.query(
-        `SELECT j.id, j.event_id, j.channel, j.recipient_kind, j.recipient_alias, j.to_number, j.kind, j.status, j.attempts, j.provider, j.provider_status,
-                j.message_body, j.last_error, j.created_at, j.updated_at, j.accepted_at, j.delivered_at, e.kind AS event_kind, e.title, e.zone_label
-           FROM notification_jobs j JOIN events e ON e.id = j.event_id
-          WHERE ($1::text IS NULL OR j.channel = $1) AND ($2::text IS NULL OR j.recipient_kind = $2)
-          ORDER BY j.id DESC LIMIT 100`,
-        [q.channel ?? null, q.recipient ?? null],
-      ),
-      db.query('SELECT id, job_id, to_number, script, created_at FROM simulated_calls ORDER BY id DESC LIMIT 20'),
-      db.query('SELECT id, channel, session_id, phone, input, response, simulated, created_at FROM channel_log ORDER BY id DESC LIMIT 40'),
-    ]);
-    return {
-      providers: {
-        sms: cfg.SMS_PROVIDER === 'mock'
-          ? { mode: 'simulated', label: 'SMS simulation — nothing is sent' }
-          : { mode: cfg.AT_ENVIRONMENT, label: `Africa's Talking ${cfg.AT_ENVIRONMENT}${cfg.AT_ENVIRONMENT === 'sandbox' ? ' (messages appear in the AT simulator)' : ''}`, keyConfigured: !!cfg.AT_API_KEY, username: cfg.AT_USERNAME },
-        voice: cfg.VOICE_PROVIDER === 'africastalking' ? { mode: 'africastalking', label: "Africa's Talking voice" } : { mode: 'simulated', label: 'Voice simulation — no phone rings' },
-        ussd: { mode: cfg.USSD_ENABLED && cfg.WEBHOOK_TOKEN ? 'webhook' : 'simulator-only', label: cfg.USSD_ENABLED ? "Africa's Talking USSD callback enabled" : 'USSD callback disabled — use the simulator' },
-      },
-      jobs: jobs.rows.map((j: { event_id: number }) => ({ ...j, ref: eventRef(j.event_id) })),
-      simulatedCalls: calls.rows,
-      sessions: sessions.rows,
-    };
-  });
-
-  app.post('/api/sim/ussd', { preHandler: requireStaff }, async (req) => {
-    const b = z.object({ phone: z.string().trim().min(6).max(20), text: z.string().max(60).default(''), sessionId: z.string().max(64).default('sim') }).parse(req.body);
-    return { response: await handleUssd(db, cfg, { sessionId: `SIM-${b.sessionId}`, phoneNumber: b.phone, text: b.text }, { simulated: true }) };
-  });
-  app.post('/api/sim/voice', { preHandler: requireStaff }, async (req) => {
-    const b = z.object({ phone: z.string().trim().min(6).max(20), digits: z.string().regex(/^\d?$/).optional() }).parse(req.body);
-    const xml = await handleVoice(
-      db, cfg,
-      { sessionId: `SIMV-${Date.now()}`, isActive: '1', direction: 'Inbound', callerNumber: b.phone, dtmfDigits: b.digits || undefined },
-      { simulated: true, callbackUrl: '/webhooks/voice' },
-    );
-    return { xml };
   });
 
   app.get('/api/sim/scenarios', { preHandler: requireStaff }, async () => ({

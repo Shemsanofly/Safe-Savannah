@@ -22,12 +22,12 @@ export function mount(main, ctx) {
 
   main.append(
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'Safety zones'), el('p', { class: 'sub' }, 'Geofences around lodges, camps, trails and roads. Risk depends on the species, distance to these zones, their sensitivity and when people are there.')),
+      el('div', {}, el('h1', {}, 'Safety zones'), el('p', { class: 'sub' }, 'Places where people are. Dangerous animals near them raise alerts.')),
       el('div', { class: 'page-actions' }, areaSel, el('button', { type: 'button', class: 'btn btn-primary', onclick: () => startNew() }, icon('plus'), 'New zone'))),
     drawHint,
     el('div', { class: 'ops-grid' },
       el('section', { class: 'panel' }, el('div', { class: 'panel-head' }, el('h2', {}, icon('map'), 'Map')), el('div', { class: 'panel-body' }, mapBox)),
-      el('div', { class: 'stack' }, formBox, el('section', { class: 'panel' }, el('div', { class: 'panel-head' }, el('h2', {}, icon('zone'), 'Zones in this area')), el('div', { class: 'panel-body' }, list)))),
+      el('div', { class: 'stack' }, formBox, el('section', { class: 'panel' }, el('div', { class: 'panel-head' }, el('h2', {}, icon('zone'), 'Zones')), el('div', { class: 'panel-body' }, list)))),
   );
 
   areaSel.addEventListener('change', () => {
@@ -69,14 +69,15 @@ export function mount(main, ctx) {
 
   function renderList() {
     if (!data.zones.length) {
-      clear(list, el('div', { class: 'empty' }, icon('zone'), el('strong', {}, 'No zones in this area'), el('p', {}, 'Without zones nothing here can raise a risk alert. Choose "New zone" and click the map to draw one.')));
+      clear(list, el('div', { class: 'empty' }, icon('zone'), el('strong', {}, 'No zones yet'), el('p', {}, 'Choose "New zone" and click the map to draw one.')));
       return;
     }
-    clear(list, data.zones.map((z) => el('div', { class: 'gloss-item' },
-      el('span', { class: `badge ${z.active ? (z.sensitivity === 'high' ? 'tone-bad' : z.sensitivity === 'medium' ? 'tone-warn' : 'tone-ok') : 'tone-muted'}` }, z.active ? z.sensitivity : 'inactive'),
-      el('div', {}, el('strong', {}, z.name), el('p', { class: 'small muted' }, `${KINDS.find((k) => k[0] === z.kind)?.[1] || z.kind} · ${OCC.find((o) => o[0] === z.occupancy)?.[1]} · alert within ${z.buffer_m} m · ${z.geometry.length} points`),
-        z.notes ? el('p', { class: 'small muted' }, z.notes) : null,
-        el('div', { class: 'row' }, el('button', { type: 'button', class: 'btn btn-sm', onclick: () => startEdit(z) }, 'Edit'))))));
+    clear(list, el('ul', { class: 'zone-list' }, data.zones.map((z) => el('li', {},
+      el('button', { type: 'button', class: `zone-row${z.active ? '' : ' is-off'}`, onclick: () => startEdit(z), 'aria-label': `Edit ${z.name}` },
+        el('span', { class: `zone-dot sens-${z.active ? z.sensitivity : 'off'}`, 'aria-hidden': 'true' }),
+        el('span', { class: 'grow' }, el('strong', {}, z.name), el('span', { class: 'small muted' }, KINDS.find((k) => k[0] === z.kind)?.[1].split(' /')[0] || z.kind)),
+        el('span', { class: 'small muted' }, z.active ? `${z.sensitivity}` : 'off'),
+        icon('chevron-right', 'icon icon-sm'))))));
   }
 
   function drawDraft() {
@@ -128,8 +129,8 @@ export function mount(main, ctx) {
     const form = el('form', { class: 'panel', novalidate: true },
       el('div', { class: 'panel-head' }, el('h2', {}, icon('zone'), editing ? `Edit: ${editing.name}` : 'New safety zone'), el('button', { type: 'button', class: 'btn btn-sm btn-ghost', onclick: () => { editing = null; drawing = false; draft = []; drawDraft(); clear(formBox); } }, 'Cancel')),
       el('div', { class: 'panel-body stack' },
-        fieldEl('zf-name', 'Name', name), fieldEl('zf-kind', 'Type of place', kind), fieldEl('zf-sens', 'Sensitivity', sens, 'How badly could a dangerous animal here hurt people?'),
-        fieldEl('zf-occ', 'When are people here?', occ), fieldEl('zf-buf', 'Alert distance around the zone (metres)', buffer, 'Dangerous animals within this distance raise alerts. 0–5000 m.'),
+        fieldEl('zf-name', 'Name', name), fieldEl('zf-kind', 'Type of place', kind), fieldEl('zf-sens', 'Sensitivity', sens),
+        fieldEl('zf-occ', 'When are people here?', occ), fieldEl('zf-buf', 'Alert distance (metres)', buffer),
         fieldEl('zf-notes', 'Notes (optional)', notes), err,
         el('div', { class: 'form-actions' }, save, redraw, toggle, status)));
     form.addEventListener('submit', async (e) => {

@@ -12,7 +12,7 @@ no CDN). Leaflet is served locally; only map tiles need internet.
 | Interface | Who | Highlights |
 |---|---|---|
 | **Traveller app** `/t` | Tourists (mobile-first, English / Kiswahili) | Register trip and destination · wildlife alerts for their area with what to do · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with live status: Received → Ranger responding → Resolved · share location · safety guidelines and phrases |
-| **Ranger console** `/` | Rangers | **Operations map** (zones, cameras, incidents, recent detections) with a priority queue (SOS first, then risk) · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · wildlife detections log · **AI monitor** photo analysis · Messages with USSD/voice simulators · on-duty toggle |
+| **Ranger console** `/` | Rangers | **Operations map** (zones, cameras, incidents, recent detections) with a priority queue (SOS first, then risk) · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · wildlife detections log · **Check a photo** (AI analysis) · on-duty toggle |
 | **Admin** (same console, extra screens) | Administrators | Dashboard statistics · **Safety zones** geofence editor (click to draw) · People (rangers with phone/area/on-duty, admins, tourist accounts) · Reports + CSV · settings · demo scenarios |
 
 > Safe Savannah can only warn, never reassure. Cameras miss animals; a camera that is not live sees nothing; a
@@ -128,7 +128,7 @@ Tourists are told the place name (e.g. "near Riverside lodge grounds"), never ex
 
 ## AI wildlife monitoring
 
-**AI monitor** accepts a camera image or wildlife photo (JPEG/PNG/WebP, ≤ 8 MB; phones open the camera). The
+**Check a photo** accepts a camera image or wildlife photo (JPEG/PNG/WebP, ≤ 8 MB; phones open the camera). The
 detection is placed at the chosen camera station's position and passed through the same risk engine.
 
 - **Real model:** the pinned ONNX model (YOLO11n, see `scripts/export_model.py`) runs on the uploaded photo.
@@ -139,7 +139,7 @@ detection is placed at the chosen camera station's position and passed through t
 - **Simulated:** when no model is installed, or for species it can't name, staff can record a *simulated
   detection* of a chosen species. It is stored as `analysis = simulated` and labelled **Simulated** everywhere.
 - **Camera simulator:** a background worker feeds random **simulated** sightings from demo camera stations
-  every `SIMULATOR_INTERVAL_SECONDS`. Admins can pause it or run named **demo scenarios** from Operations:
+  every `SIMULATOR_INTERVAL_SECONDS`. Admins can pause it or run named **demo scenarios** from the Live map:
   lion near camp, elephant in lodge, buffalo on trail, hippo near picnic site, giraffe through lodge (stays
   low), zebra on road, elephant far away (no risk).
 
@@ -152,8 +152,8 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 | | Tourist | Ranger | Admin |
 |---|---|---|---|
 | Own trip, alerts for own area, SOS, status | ✓ | | |
-| Map, incidents, detections, AI monitor, messages, simulators, set own on-duty | | ✓ | ✓ |
-| Respond / resolve / log handoffs, resend messages | | ✓ | ✓ |
+| Map, incidents, detections, photo check, set own on-duty | | ✓ | ✓ |
+| Respond / resolve / log handoffs | | ✓ | ✓ |
 | Zones, people, tourist accounts, CSV export, scenarios, technical settings | | | ✓ |
 
 - Separate signed, httpOnly, SameSite=strict cookies for staff and tourists.
@@ -174,7 +174,6 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 | `POST /api/incidents/:id/status` | staff | `responding` or `resolved` (`outcome: handled \| false_alarm`, note required); notifies the SOS reporter |
 | `GET /api/detections`, `GET /api/detections/:id/image` | staff | Detection log and photos |
 | `GET /api/ai/status`, `POST /api/ai/analyze` (multipart) | staff | Model capabilities; analyse a photo (`mode=model\|simulated`) |
-| `GET /api/comms`, `POST /api/sim/ussd`, `POST /api/sim/voice` | staff | Outbox across SMS/voice, USSD/voice simulators |
 | `GET/POST/PATCH /api/zones` | staff read, admin write | Geofences (polygon `[[lat,lng],…]`, kind, sensitivity, occupancy, alert distance) |
 | `GET /api/tourists`, `PATCH /api/tourists/:id`, `POST /api/rangers`, `PATCH /api/rangers/:id/contact` | admin | People management |
 | `GET /api/stats?days=`, `POST /api/sim/scenario`, `POST /api/sim/state` | staff / admin | Statistics, demo scenarios, pause simulator |
@@ -361,19 +360,24 @@ callback to `/webhooks/ussd?token=...`. The menu is: `1` lists active alerts; `2
 
 ## Using the dashboard
 
-Open http://127.0.0.1:8080 and sign in. The top bar always shows how many incidents need acknowledgement, the
-camera state, whether the footage is simulated, the SMS mode and when the screen last updated. If the browser
-loses the server, a red banner says so, and the last known status is greyed out and stamped "Status as of …".
+Open http://127.0.0.1:8080 and sign in. The console is deliberately small: each screen shows only what a
+ranger needs to act. Messages (SMS, USSD, voice) are **not shown in the web app** — they go through Africa's
+Talking and appear on the phone or in the AT sandbox simulator. If `AT_API_KEY` is missing, the server log
+says so at start-up.
 
 | Screen | What it is for |
 |---|---|
-| **Overview** | Incidents needing action (with one-click acknowledge), the live camera with zone and detection overlays, zone status and SMS health. On narrow screens an urgent incident is shown above the camera. |
-| **Incidents** | Search (SS-number, zone, ranger name or note text), filter by status, detection source, zone, SMS state, owner and date, then sort and page through results. Filters are kept in the URL and stay put while results refresh. Admins can export the current filter to CSV. |
-| **Incident detail** | Snapshot, detection facts, owner and time to acknowledge. Tabs for **Log handoff** (radio, phone, in person), **Close incident**, **False alert** (with a reason) and **Add note**. Also shows SMS history with every send attempt and a merged, chronological activity log. |
-| **History & reports** | Counts, median time to acknowledge or close, and SMS outcomes for a date range in lodge time. Includes a per-day chart with a table view, and the same range in the incident list or CSV. Empty ranges say so and show no averages. |
-| **SMS notifications** | Every outbox message with plain-language state and what to do about failures. A separate **Mock outbox** lists messages that never left the laptop, and admins get a demo uplink switch. |
-| **Settings** | A read-only view of the camera, detection rule, time zone and SMS set-up. Phone numbers are masked and no credentials are ever sent to the browser. Admins also see technical details and manage operators: add, change role, deactivate, reset PIN. |
-| **Guide** | The five-step workflow and a glossary for every status label. |
+| **Live map** | Open alerts and SOS on the map, with a priority queue and one-click "I'm responding". Admins can run demo scenarios here. |
+| **Incidents** | Search and filter (type, risk, area, status, date) every alert and emergency, current and past. Admins can export CSV. |
+| **Incident detail** | Photo, detection facts, owner, actions (**Log handoff**, **Resolve**, **False alarm**, **Add note**) and a short activity log. |
+| **Detections** | Every animal sighting and its risk. |
+| **Check a photo** | Upload a wildlife photo; the AI model (or a labelled simulated detection) scores the risk. |
+| **Gate camera** | The live camera feed with zone and detection overlays. |
+| **Dashboard** (admin) | Five headline numbers, response times and detections by species. Links to reports and CSV. |
+| **Safety zones** (admin) | A compact list of zones; click one (or the map) to edit, or draw a new one. |
+| **People** (admin) | Rangers and registered tourists. |
+| **Settings** | A read-only view of the camera, detection rule and time zone; operator management for admins. |
+| **Guide** | Handling an alert in four steps, plus what each label means. |
 
 The camera panel shows one of four states: **Live**, **Reconnecting** (the worker is retrying a failed
 source), **Stale** (connected but no new frames) or **Offline** (the worker is not reporting). Anything other
@@ -392,10 +396,10 @@ desktops, and it respects reduced-motion settings.
 
 | | Ranger | Admin |
 |---|---|---|
-| View everything, acknowledge, log handoffs and notes, close, mark false alerts, request SMS resend | ✓ | ✓ |
+| View everything, acknowledge, log handoffs and notes, close, mark false alerts | ✓ | ✓ |
 | Export incidents to CSV | | ✓ |
 | Manage operators (add, change role, deactivate, reset PIN) | | ✓ |
-| See technical settings and raw camera errors; use demo controls | | ✓ |
+| See technical settings and raw camera errors; run demo scenarios | | ✓ |
 
 The server enforces every one of these permissions. Changing someone's role, deactivating them or resetting
 their PIN ends their existing sessions. You cannot deactivate or demote yourself, and the last active
@@ -405,27 +409,24 @@ admin cannot be removed.
 
 | Route | Purpose |
 |---|---|
-| `GET /api/overview` | Counts, camera state (live/reconnecting/stale/offline), zones with outlines, active incidents and SMS health |
+| `GET /api/overview` | Counts, camera state (live/reconnecting/stale/offline), zones with outlines and active incidents |
 | `GET /api/incidents` | Search, filter, sort and page (`q, status, source, zone, sms, owner, from, to, sort, order, page, pageSize`) |
-| `GET /api/incidents/:id` | Detail with actions, SMS jobs with their attempt log, and a merged timeline |
+| `GET /api/incidents/:id` | Detail with actions and a merged timeline |
 | `GET /api/incidents/export.csv` | CSV of the same filters (admins). Times are UTC; cells that could run as spreadsheet formulas are neutralised |
 | `GET /api/reports/summary?from&to&source` | Summary figures computed from stored records, by day in lodge time |
-| `GET /api/notifications` | Outbox jobs by state group, plus the mock outbox |
 | `GET /api/settings` | Configuration view with no secrets; technical section for admins |
 | `GET/POST/PATCH /api/operators…` | Operator management (admins) |
 | `GET /api/cameras/:id/live.jpg`, `live.json` | Latest clean frame plus detection metadata for client-drawn overlays |
-| `POST /api/events/:id/acknowledge`, `/actions`, `POST /api/notifications/:id/resend` | Incident workflow (unchanged) |
+| `POST /api/events/:id/acknowledge`, `/actions` | Incident workflow (unchanged) |
 
 ## Judge demo script
 
 1. Show the camera view: the elephant is **outside** the dashed polygon, so no alert.
-2. The elephant crosses. After about 3 frames, the **SS-0xx** card opens, the mock (or sandbox) SMS shows as
-   *accepted by provider*, and the snapshot shows the triggering box.
+2. The elephant crosses. After about 3 frames, the **SS-0xx** card opens and the SMS arrives in the Africa's
+   Talking sandbox simulator (not in the web app). The snapshot shows the triggering box.
 3. Click **Acknowledge**, open the incident, and use **Log handoff** (Radio, "Guide Juma ch.3, guests held at
    lodge").
-4. On **SMS notifications**, set **Demo: simulate the SMS uplink** to **Down**. Let the clip loop: the camera still detects, the alert still
-   opens on the local dashboard, and the SMS shows *Queued — provider unreachable, retrying at …*. Switch the
-   uplink back **up** and the queued SMS goes out. For a real outage, unplug the network instead. Messages
+4. Messages keep working through outages: if the network drops, SMS wait in the outbox and are retried; ones
    older than `SMS_FRESHNESS_SECONDS` are marked **expired**, not sent late.
 5. Close the incident with what was verified. The zone stays *awaiting clear* until it has been empty for 10 s.
 

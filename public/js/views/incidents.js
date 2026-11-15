@@ -1,6 +1,6 @@
 // Incidents: search, filter, sort and page through current and historical incidents.
 import { api, BOOT, clear, debounce, el, fmtDateTime, fmtDuration, icon, qs, toast } from '../lib.js';
-import { INCIDENT, SMS, demoBadge, incidentBadge, kindBadge, riskBadge, smsBadge, sourceBadge, summarizeSms } from '../status.js';
+import { demoBadge, incidentBadge, kindBadge, riskBadge, sourceBadge } from '../status.js';
 
 const STATUS_TABS = [
   { value: '', label: 'All' },
@@ -18,23 +18,18 @@ const SORTS = [
   { value: 'ack_seconds:desc', label: 'Slowest response' },
   { value: 'ack_seconds:asc', label: 'Fastest response' },
 ];
-const FILTER_KEYS = ['q', 'kind', 'risk', 'area', 'status', 'source', 'zone', 'sms', 'owner', 'from', 'to', 'sort', 'order', 'page', 'pageSize'];
+const FILTER_KEYS = ['q', 'kind', 'risk', 'area', 'status', 'source', 'from', 'to', 'sort', 'order', 'page', 'pageSize'];
 
 export function mount(main, ctx) {
   let params = pick(ctx.params);
   let controller = null;
-  let zonesLoaded = false;
 
   // ---------- controls (built once; never re-rendered by refreshes) ----------
   const search = el('input', { type: 'search', id: 'f-q', placeholder: 'SS-014, place, species, ranger, tourist phone or note', autocomplete: 'off', value: params.q || '' });
   const statusSeg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Incident status' });
-  const source = select('f-source', [['', 'Any source'], ['inference', 'Real AI model'], ['simulated', 'Simulated AI'], ['report', 'Human report (SOS)'], ['synthetic', 'Test data'], ['simulated,synthetic', 'Simulated or test']], params.source);
   const risk = select('f-risk', [['', 'Any risk'], ['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['high,critical', 'High or critical']], params.risk);
   const areaSel = select('f-area', [['', 'All areas']], params.area);
   const kindSeg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Incident type' });
-  const zone = select('f-zone', [['', 'Any zone']], params.zone);
-  const sms = select('f-sms', [['', 'Any SMS state'], ['queued', 'Queued or retrying'], ['accepted', 'Accepted by provider'], ['delivered', 'Delivered'], ['problem', 'Needs attention'], ['not_sent', 'Not sent (expired/closed)'], ['none', 'No SMS job']], params.sms);
-  const owner = select('f-owner', [['', 'Anyone'], ['me', 'Acknowledged by me']], params.owner);
   const from = el('input', { type: 'date', id: 'f-from', value: params.from || '' });
   const to = el('input', { type: 'date', id: 'f-to', value: params.to || '' });
   const sort = select('f-sort', SORTS.map((s) => [s.value, s.label]), `${params.sort || 'opened_at'}:${params.order || 'desc'}`);
@@ -49,10 +44,6 @@ export function mount(main, ctx) {
     el('div', { class: 'filters-row' },
       field('f-area', 'Area', areaSel),
       field('f-risk', 'Risk', risk),
-      field('f-source', 'Source', source),
-      field('f-zone', 'Gate camera zone', zone),
-      field('f-sms', 'SMS', sms),
-      field('f-owner', 'Owner', owner),
       field('f-from', 'Opened from', from),
       field('f-to', 'Opened to', to),
       el('div', { class: 'field shrink' }, el('span', { class: 'label', 'aria-hidden': 'true' }, ' '), reset)));
@@ -68,7 +59,7 @@ export function mount(main, ctx) {
 
   main.append(
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'Incidents'), el('p', { class: 'sub' }, 'Search and review every alert, current and past.')),
+      el('div', {}, el('h1', {}, 'Incidents'), el('p', { class: 'sub' }, 'Every alert and emergency, current and past.')),
       el('div', { class: 'page-actions' }, exportBtn)),
     el('form', { class: 'filters', role: 'search', 'aria-label': 'Filter incidents', onsubmit: (e) => e.preventDefault() },
       el('div', { class: 'filters-row' },
@@ -102,10 +93,6 @@ export function mount(main, ctx) {
 
   // ---------- wiring ----------
   search.addEventListener('input', debounce(() => setParams({ q: search.value.trim(), page: '' }), 300));
-  source.addEventListener('change', () => setParams({ source: source.value, page: '' }));
-  zone.addEventListener('change', () => setParams({ zone: zone.value, page: '' }));
-  sms.addEventListener('change', () => setParams({ sms: sms.value, page: '' }));
-  owner.addEventListener('change', () => setParams({ owner: owner.value, page: '' }));
   for (const d of [from, to]) d.addEventListener('change', () => setParams({ from: from.value, to: to.value, page: '' }));
   sort.addEventListener('change', () => {
     const [s, o] = sort.value.split(':');
@@ -114,7 +101,7 @@ export function mount(main, ctx) {
   pageSize.addEventListener('change', () => setParams({ pageSize: pageSize.value, page: '' }));
   reset.addEventListener('click', () => {
     search.value = '';
-    for (const s of [source, zone, sms, owner, risk, areaSel]) s.value = '';
+    for (const s of [risk, areaSel]) s.value = '';
     from.value = '';
     to.value = '';
     sort.value = 'opened_at:desc';
@@ -152,11 +139,6 @@ export function mount(main, ctx) {
     }
     try {
       const data = await api.get(`/api/incidents${qs(params)}`, { signal: controller.signal });
-      if (!zonesLoaded) {
-        for (const z of data.zones) zone.append(el('option', { value: z.id }, z.label));
-        zone.value = params.zone || '';
-        zonesLoaded = true;
-      }
       render(data);
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -173,7 +155,7 @@ export function mount(main, ctx) {
     const first = data.total === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
     const last = Math.min(data.total, data.page * data.pageSize);
     const active = activeFilterCount();
-    const hidden = ['area', 'risk', 'source', 'zone', 'sms', 'owner', 'from', 'to'].filter((k) => params[k]).length;
+    const hidden = ['area', 'risk', 'from', 'to'].filter((k) => params[k]).length;
     moreSummary.lastChild.textContent = hidden ? `More filters (${hidden} active)` : 'More filters';
     clear(resultBar,
       el('p', { class: 'strong' }, data.total === 0 ? 'No incidents' : `Showing ${first}–${last} of ${data.total} incident${data.total === 1 ? '' : 's'}`),
@@ -194,21 +176,18 @@ export function mount(main, ctx) {
     }
 
     const rows = data.items.map((i) => {
-      const smsStatus = summarizeSms(i.sms_statuses);
       const tr = el('tr', { class: `is-row-link is-${i.status}` },
         el('td', { 'data-label': 'Incident' }, el('div', { class: 'cell-stack' },
           el('a', { href: `#/incidents/${i.id}`, class: 'strong' }, i.ref),
           el('span', { class: 'small' }, i.title || i.zone_label || ''),
           el('span', { class: 'muted small' }, i.area_name || ''))),
-        el('td', { 'data-label': 'Type' }, el('div', { class: 'cell-stack' }, kindBadge(i.kind), riskBadge(i.risk_level), i.demo ? demoBadge() : null)),
+        el('td', { 'data-label': 'Type' }, el('div', { class: 'cell-stack' }, kindBadge(i.kind), riskBadge(i.risk_level), i.source === 'simulated' || i.source === 'synthetic' ? sourceBadge(i.source) : null, i.demo ? demoBadge() : null)),
         el('td', { 'data-label': 'Status' }, incidentBadge(i.status)),
         el('td', { 'data-label': 'Opened' }, el('div', { class: 'cell-stack' }, fmtDateTime(i.opened_at),
           i.class_label ? el('span', { class: 'muted small' }, `Peak ${Math.round((i.confidence || 0) * 100)}% ${i.class_label}`) : i.report_channel ? el('span', { class: 'muted small' }, `via ${i.report_channel.toUpperCase()}`) : null)),
-        el('td', { 'data-label': 'Time to respond', class: 'num' }, i.ack_seconds === null ? el('span', { class: 'muted' }, i.status === 'open' ? 'waiting' : '—') : fmtDuration(i.ack_seconds)),
         el('td', { 'data-label': 'Responder' }, i.acknowledged_by_name || i.acknowledged_by || el('span', { class: 'muted' }, 'nobody yet'),
           i.handoff_count ? el('div', { class: 'muted small' }, `${i.handoff_count} handoff${i.handoff_count === 1 ? '' : 's'}`) : null),
-        el('td', { 'data-label': 'SMS' }, smsStatus ? el('span', { title: SMS[smsStatus]?.explain }, smsBadge(smsStatus)) : el('span', { class: 'muted' }, 'none')),
-        el('td', { 'data-label': 'Source' }, sourceBadge(i.source)));
+        null);
       // Whole row is clickable for pointer users; the ref link is the keyboard target.
       tr.addEventListener('click', (e) => {
         if (e.target.closest('a,button')) return;
@@ -218,8 +197,7 @@ export function mount(main, ctx) {
     });
     clear(results, el('div', { class: 'table-wrap' }, el('table', { class: 'data table-cards' },
       el('caption', { class: 'sr-only' }, 'Incidents matching the filters'),
-      el('thead', {}, el('tr', {}, ['Incident', 'Type', 'Status', 'Opened', 'Time to respond', 'Responder', 'SMS', 'Source'].map((h) =>
-        el('th', { scope: 'col', class: h === 'Time to respond' ? 'num' : null }, h)))),
+      el('thead', {}, el('tr', {}, ['Incident', 'Type', 'Status', 'Opened', 'Responder'].map((h) => el('th', { scope: 'col' }, h)))),
       el('tbody', {}, rows))));
 
     clear(pager,
@@ -229,7 +207,7 @@ export function mount(main, ctx) {
   }
 
   function activeFilterCount() {
-    return ['q', 'kind', 'risk', 'area', 'status', 'source', 'zone', 'sms', 'owner', 'from', 'to'].filter((k) => params[k]).length;
+    return ['q', 'kind', 'risk', 'area', 'status', 'source', 'from', 'to'].filter((k) => params[k]).length;
   }
 
   if (exportBtn) {

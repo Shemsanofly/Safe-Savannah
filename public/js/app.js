@@ -7,7 +7,6 @@ const VIEWS = {
   ops: () => import('./views/ops.js'),
   detections: () => import('./views/detections.js'),
   ai: () => import('./views/ai.js'),
-  comms: () => import('./views/comms.js'),
   stats: () => import('./views/stats.js'),
   zones: () => import('./views/zones.js'),
   people: () => import('./views/people.js'),
@@ -15,7 +14,6 @@ const VIEWS = {
   incidents: () => import('./views/incidents.js'),
   incident: () => import('./views/incident.js'),
   history: () => import('./views/history.js'),
-  notifications: () => import('./views/notifications.js'),
   settings: () => import('./views/settings.js'),
   help: () => import('./views/help.js'),
 };
@@ -98,18 +96,12 @@ function renderShell(s) {
     if (unacknowledged > 0) pills.push(pill('#/incidents?status=open', 'urgent', 'incident', `${unacknowledged} pending`, { dot: true, pulse: true }));
     else if (active > 0) pills.push(pill('#/incidents?status=active', 'warn', 'incident', `${active} responding`));
     else pills.push(pill('#/incidents', 'ok', 'check-circle', 'No active incidents', { title: 'No incident is open. This does not mean the path is safe.' }));
+    // Camera: only mention it when something is wrong (keeps the bar quiet).
     for (const c of o.cameras) {
+      if (c.feedState === 'live') continue;
       const f = FEED[c.feedState];
-      pills.push(pill('#/overview', f.tone, f.icon, `Gate camera ${f.label.toLowerCase()}`, { title: f.explain }));
-      if (c.detectorKind === 'simulated') pills.push(pill('#/settings', 'sim', 'flask', 'Simulated footage', { title: 'The detector is the scripted demo, not a real model.' }));
+      pills.push(pill('#/overview', f.tone === 'warn' ? 'warn' : 'unknown', f.icon, `Gate camera ${f.label.toLowerCase()} — zone unknown`, { title: f.explain }));
     }
-    if (o.cameras.length === 0) pills.push(pill('#/overview', 'unknown', 'camera-off', 'Gate camera not running'));
-    if (o.zones.some((z) => z.displayState === 'unknown')) pills.push(pill('#/overview', 'unknown', 'alert', 'Zone UNKNOWN', { title: 'No live frames: the system cannot tell what is in the zone.' }));
-    const sms = o.sms;
-    if (sms.needsAttention > 0) pills.push(pill('#/comms', 'bad', 'sms', `SMS: ${sms.needsAttention} need${sms.needsAttention === 1 ? 's' : ''} attention`));
-    else if (sms.queued > 0) pills.push(pill('#/comms', 'warn', 'sms', `SMS: ${sms.queued} queued`));
-    if (sms.mode === 'mock') pills.push(pill('#/comms', 'mock', 'sms', 'SMS simulated — not sent'));
-    else if (sms.mode === 'sandbox') pills.push(pill('#/comms', 'mock', 'sms', "SMS: Africa's Talking sandbox"));
     // When the server cannot be reached, keep the last known status but mark it clearly as out of date.
     const outdated = !!s.error && s.failures >= 2;
     strip.classList.toggle('is-stale', outdated);
@@ -183,17 +175,17 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// On-duty toggle (rangers on duty receive alert SMS and calls).
+// On-duty toggle (rangers on duty receive alerts).
 const duty = document.getElementById('duty-toggle');
 if (duty) {
   api.get('/api/me').then((me) => {
     duty.checked = !!me.operator.on_duty;
-    if (!me.operator.phone) duty.parentElement.title = 'No phone number on your account — ask an admin to add one to receive SMS.';
+    if (!me.operator.phone) duty.parentElement.title = 'No phone number on your account — ask an admin to add one.';
   }).catch(() => undefined);
   duty.addEventListener('change', async () => {
     try {
       await api.patch('/api/me', { on_duty: duty.checked });
-      toast(duty.checked ? 'You are on duty: you will receive alert SMS and calls.' : 'You are off duty: alerts go to other rangers.');
+      toast(duty.checked ? 'You are on duty and will receive alerts.' : 'You are off duty. Alerts go to other rangers.');
     } catch (err) {
       duty.checked = !duty.checked;
       toast(err.message, 'error');

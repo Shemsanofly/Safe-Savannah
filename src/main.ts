@@ -90,6 +90,10 @@ async function runNotifier(cfg: AppConfig): Promise<void> {
     await db.end();
   });
   log.info('notifier started', { provider: provider.name, recipients: cfg.recipients.map((r) => r.alias) });
+  if (cfg.SMS_PROVIDER === 'africastalking') {
+    if (cfg.AT_API_KEY) log.info(`SMS go to Africa's Talking (${cfg.AT_ENVIRONMENT}, username "${cfg.AT_USERNAME}")${cfg.AT_ENVIRONMENT === 'sandbox' ? ' — view them in the AT simulator' : ''}`);
+    else log.warn("AT_API_KEY is not set: SMS will NOT be sent. Add your Africa's Talking sandbox key to .env and restart.");
+  } else log.warn('SMS_PROVIDER=mock: SMS are only simulated locally, nothing is sent.');
   await worker.run(signal, listen);
 }
 

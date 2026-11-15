@@ -22,12 +22,10 @@ export function mount(main) {
 
   function render(s) {
     const d = s.detector;
-    const n = s.notifications;
     const secondsForStreak = (d.consecutiveFrames / d.sampleFps).toFixed(1);
     clear(body,
       el('div', { class: 'alert alert-info' }, icon('info'), el('div', { class: 'grow' },
-        'To change the camera, zone, detection thresholds or SMS recipients, ask the system owner to edit the server configuration and restart it. ',
-        'Thresholds are tuning defaults, not validated safety limits.')),
+        'These come from the server configuration. To change them, ask the system owner. Safety zones and people are managed in their own screens.')),
       el('div', { class: 'cols-2' },
         section('camera', 'Camera & zone', [
           ['Camera', `${s.camera.label} (${s.camera.id})`],
@@ -43,12 +41,6 @@ export function mount(main) {
           ['Re-arming', `After the alert is closed and the zone has been empty for ${d.clearSeconds} s`],
           ['Feed counts as stale', `After ${d.staleFeedSeconds} s without a new frame (zone shows UNKNOWN)`],
         ]),
-        section('sms', 'Notifications', [
-          ['SMS service', el('span', { class: `badge ${n.mode === 'live' ? 'tone-real' : 'tone-mock'}` }, n.label)],
-          ['Test label', n.testMode ? 'Every message starts "Safe Savannah TEST"' : 'Off'],
-          ['Recipients', n.recipients.length ? el('ul', { class: 'small', style: null }, n.recipients.map((r) => el('li', {}, `${r.alias}: ${r.number}`))) : 'None configured'],
-          ['Stale message window', `Queued messages older than ${Math.round(n.freshnessSeconds / 60)} min are not sent late`],
-        ]),
         section('clock', 'Time', [
           ['Lodge time zone', s.timeZone],
           ['Your role', BOOT.operator.role === 'admin' ? 'Admin — can export records and manage users, zones and settings' : 'Ranger'],
@@ -60,16 +52,9 @@ export function mount(main) {
           fact('Camera source', s.technical.cameraSource),
           fact('Detector model', s.technical.detectorModel || '—'),
           fact('Max frame gap', `${s.technical.maxFrameGapMs} ms`),
-          fact('SMS retry cap', `${s.technical.retryCapSeconds} s`),
-          fact('SMS request timeout', `${s.technical.smsTimeoutMs} ms`),
-          fact('Sender ID configured', yes(s.technical.senderIdConfigured)),
-          fact('Delivery reports', s.technical.deliveryReportsConfigured ? 'Webhook token set' : 'Not configured'),
-          fact('Webhook listener', s.technical.webhookListener || 'Not separate'),
-          fact('USSD menu', s.technical.ussdEnabled ? 'Enabled' : 'Disabled'),
           fact('Session length', `${s.technical.sessionHours} h`),
-          fact('Secure cookies', yes(s.technical.secureCookies)),
-          fact('Demo controls', yes(s.technical.demoControls))),
-          el('p', { class: 'hint', style: null }, 'Credentials such as the SMS API key are never shown in the browser.'))) : null,
+          fact('Secure cookies', yes(s.technical.secureCookies))),
+          el('p', { class: 'hint', style: null }, 'Credentials are never shown in the browser.'))) : null,
     );
   }
 

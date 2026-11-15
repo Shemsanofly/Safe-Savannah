@@ -7,7 +7,7 @@ export function mount(main, ctx) {
   let areas = [];
   const tabs = el('div', { class: 'seg', role: 'group', 'aria-label': 'Section' });
   const body = el('div', {});
-  main.append(el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'People'), el('p', { class: 'sub' }, 'Rangers receive alerts for their area while on duty. Tourists register in the traveller app.')), tabs), body);
+  main.append(el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'People'), el('p', { class: 'sub' }, 'Rangers and registered tourists.')), tabs), body);
 
   const renderTabs = () => clear(tabs, [['staff', 'Rangers & admins'], ['tourists', 'Tourists']].map(([v, l]) =>
     el('button', { type: 'button', 'aria-pressed': String(tab === v), onclick: () => { tab = v; ctx.navigate(`#/people?tab=${v}`, { replace: true }); } }, l)));
@@ -68,7 +68,7 @@ export function mount(main, ctx) {
         el('td', { 'data-label': 'Actions' }, el('div', { class: 'row' }, pin, active, status)));
     });
     clear(body,
-      el('p', { class: 'hint' }, `Rangers get SMS (and a voice call for critical alerts and SOS) for incidents in their area — or every area if none is set — while on duty and with a phone number.`),
+      el('p', { class: 'hint' }, 'On-duty rangers are alerted about incidents in their area.'),
       el('div', { class: 'table-wrap section' }, el('table', { class: 'data table-cards' },
         el('thead', {}, el('tr', {}, ['Name', 'Role', 'Alert routing', 'Status', 'Actions'].map((h) => el('th', { scope: 'col' }, h)))), el('tbody', {}, rows))),
       addStaffForm());
@@ -120,7 +120,7 @@ export function mount(main, ctx) {
             el('td', { 'data-label': 'Destination' }, el('div', { class: 'cell-stack' }, areaName(t.area_id), el('span', { class: 'small muted' }, t.lodge || ''))),
             el('td', { 'data-label': 'Trip' }, `${fmtDate(t.trip_start)} – ${fmtDate(t.trip_end)}`),
             el('td', { 'data-label': 'Group' }, String(t.group_size)),
-            el('td', { 'data-label': 'Language' }, t.language === 'sw' ? 'Kiswahili' : 'English', t.sms_alerts ? '' : el('div', { class: 'small muted' }, 'SMS alerts off')),
+            el('td', { 'data-label': 'Language' }, t.language === 'sw' ? 'Kiswahili' : 'English', t.sms_alerts ? '' : el('div', { class: 'small muted' }, 'Alerts off')),
             el('td', { 'data-label': 'SOS' }, t.sos_count ? el('a', { href: `#/incidents?kind=sos&q=${encodeURIComponent(t.phone)}` }, String(t.sos_count)) : '0'),
             el('td', { 'data-label': 'Account' }, el('div', { class: 'row' }, el('span', { class: `badge ${t.active ? 'tone-ok' : 'tone-muted'}` }, t.active ? 'Active' : 'Deactivated'), btn, status)));
         })))));

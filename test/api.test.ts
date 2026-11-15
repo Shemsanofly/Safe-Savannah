@@ -137,10 +137,4 @@ describe.skipIf(!available)('HTTP API (PostgreSQL)', () => {
     expect((await db.query(`SELECT channel FROM event_actions WHERE action = 'acknowledged'`)).rows[0].channel).toBe('ussd');
     expect(await ussd('+255711111111', `2*${event.id}*1`)).toMatch(/already has a responder/);
   });
-
-  it('demo uplink control toggles the mock adapter', async () => {
-    const r = await api('POST', '/api/demo/uplink', { state: 'down' });
-    expect(r.json()).toEqual({ mockUplink: 'down' });
-    expect((await api('GET', '/api/events')).json().notifications.mockUplink).toBe('down');
-  });
 });

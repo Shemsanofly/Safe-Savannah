@@ -57,7 +57,7 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
     <ul class="login-points">
       <li>${icon('cpu')}<span><strong>Smart detection</strong>Risk scored by species, distance and who is nearby</span></li>
       <li>${icon('siren')}<span><strong>Tourist SOS</strong>From the app, a basic phone (USSD) or a call</span></li>
-      <li>${icon('sms')}<span><strong>Africa&rsquo;s Talking</strong>SMS and voice alerts to rangers and guests</span></li>
+      <li>${icon('map')}<span><strong>One live map</strong>Every alert and emergency, where it happens</span></li>
     </ul>
   </section>
   <section class="login-panel">
@@ -93,16 +93,14 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
 }
 
 const NAV: { route: string; label: string; short: string; icon: string; admin?: boolean; primary?: boolean }[] = [
-  { route: 'ops', label: 'Operations map', short: 'Map', icon: 'map', primary: true },
+  { route: 'ops', label: 'Live map', short: 'Map', icon: 'map', primary: true },
   { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident', primary: true },
-  { route: 'detections', label: 'Wildlife detections', short: 'Detections', icon: 'paw' },
-  { route: 'ai', label: 'AI monitor', short: 'AI', icon: 'cpu', primary: true },
+  { route: 'detections', label: 'Detections', short: 'Detections', icon: 'paw' },
+  { route: 'ai', label: 'Check a photo', short: 'Photo', icon: 'cpu', primary: true },
   { route: 'overview', label: 'Gate camera', short: 'Camera', icon: 'camera' },
-  { route: 'comms', label: 'Messages', short: 'Messages', icon: 'sms' },
   { route: 'stats', label: 'Dashboard', short: 'Stats', icon: 'chart', admin: true },
   { route: 'zones', label: 'Safety zones', short: 'Zones', icon: 'zone', admin: true },
   { route: 'people', label: 'People', short: 'People', icon: 'users', admin: true },
-  { route: 'history', label: 'Reports', short: 'Reports', icon: 'note', admin: true },
   { route: 'settings', label: 'Settings', short: 'Settings', icon: 'settings' },
   { route: 'help', label: 'Guide', short: 'Guide', icon: 'help' },
 ];
@@ -143,7 +141,7 @@ export function appPage(opts: {
         <summary aria-label="Account menu for ${esc(opts.operator.name)}">${icon('user')}<span class="user-name">${esc(opts.operator.name)}</span>${icon('chevron-down', 'icon icon-sm')}</summary>
         <div class="menu-panel">
           <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${opts.operator.role === 'admin' ? 'Admin' : 'Ranger'}</span></p>
-          <label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alert SMS and calls</span></label>
+          <label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alerts</span></label>
           <a class="btn btn-ghost btn-block" href="/t" target="_blank" rel="noopener">${icon('external')}<span>Open tourist app</span></a>
           <form method="post" action="/logout"><button type="submit" class="btn btn-ghost btn-block">${icon('logout')}<span>Sign out</span></button></form>
         </div>

@@ -104,10 +104,6 @@ export function mount(main, ctx) {
     }
     const t = s.totals;
     const a = s.acknowledgement;
-    const smsOk = (s.sms.byStatus.accepted || 0) + (s.sms.byStatus.delivered || 0);
-    const smsProblem = (s.sms.byStatus.unknown || 0) + (s.sms.byStatus.failed || 0) + (s.sms.byStatus.delivery_failed || 0);
-    const smsNotSent = (s.sms.byStatus.expired || 0) + (s.sms.byStatus.cancelled || 0);
-    const smsQueued = (s.sms.byStatus.pending || 0) + (s.sms.byStatus.sending || 0) + (s.sms.byStatus.retry_wait || 0);
 
     const tiles = el('div', { class: 'tiles' },
       tile('incident', 'Incidents opened', String(t.incidents), null, `${rangeLabel}`),
@@ -120,12 +116,6 @@ export function mount(main, ctx) {
       s.resolution.count
         ? tile('check', 'Median time to close', ...durParts(s.resolution.medianSeconds), `From alert opening · ${s.resolution.count} closed or dismissed`)
         : tile('check', 'Median time to close', '—', null, 'No closed incidents in this range'),
-      tile('sms', 'SMS accepted or delivered', `${smsOk}`, `of ${s.sms.jobs}`,
-        [smsProblem ? `${smsProblem} need attention` : null, smsNotSent ? `${smsNotSent} not sent` : null, smsQueued ? `${smsQueued} queued` : null].filter(Boolean).join(' · ') || 'No problems recorded',
-        smsProblem ? 'warn' : ''),
-      s.sms.medianSecondsToAccepted !== null
-        ? tile('send', 'Median alert → SMS accepted', ...durParts(s.sms.medianSecondsToAccepted), 'Provider acceptance, not delivery')
-        : tile('send', 'Median alert → SMS accepted', '—', null, 'No SMS accepted in this range'),
     );
 
     const days = fillDays(s.range.from, s.range.to, s.perDay);
