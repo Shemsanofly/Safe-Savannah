@@ -10,6 +10,8 @@ let me = null; // { tourist, feed, emergencyLine, smsMode }
 let areas = [];
 let timer = null;
 let failures = 0;
+let registrationStep = 1;
+const authDraft = { login: {}, register: {} };
 
 const T = (k, ...a) => {
   const v = STRINGS[lang][k] ?? STRINGS.en[k] ?? k;
@@ -23,9 +25,11 @@ function readLang() {
   }
 }
 function setLang(l) {
+  rememberAuth();
   lang = l;
   try {
     localStorage.setItem('ss-lang', l);
+    sessionStorage.setItem('ss-lang-chosen', '1');
   } catch {
     /* ignore */
   }
@@ -129,6 +133,9 @@ async function route() {
   if (needsAuth && !me) return go('welcome');
   if (!needsAuth && (r === 'welcome' || r === 'login' || r === 'register') && me) return go('home');
   renderNav();
+  const isAuth = !me && ['welcome', 'login', 'register'].includes(r);
+  document.body.classList.toggle('t-auth-page', isAuth);
+  nav.hidden = isAuth;
   const views = { welcome, login, register, home, alerts, sos, guide, trip };
   (views[r] || (me ? home : welcome))();
   main.querySelector('h1')?.focus({ preventScroll: true });
@@ -146,13 +153,74 @@ window.addEventListener('hashchange', route);
 
 // ---------------------------------------------------------------- views
 function welcome() {
-  page(T('welcome_title'),
-    el('section', { class: 't-hero' }, el('h2', { class: 'strong' }, T('welcome_title')), el('p', {}, T('welcome_body'))),
-    el('div', { class: 't-card', style: null },
-      el('a', { class: 'btn btn-primary btn-lg btn-block', href: '#/register' }, icon('plus'), T('register')),
-      el('p', { class: 'muted small' }, T('have_account')),
-      el('a', { class: 'btn btn-lg btn-block', href: '#/login' }, icon('login'), T('sign_in'))),
-    emergencyLink());
+  login();
+}
+
+function rememberAuth() {
+  const form = main.querySelector('[data-auth-form]');
+  if (!form) return;
+  const draft = authDraft[form.dataset.authForm];
+  form.querySelectorAll('input, select').forEach((control) => {
+    draft[control.id] = control.type === 'checkbox' ? control.checked : control.value;
+  });
+}
+
+function authLayout(mode, form) {
+  const isRegister = mode === 'register';
+  const draft = authDraft[mode];
+  form.dataset.authForm = mode;
+  form.querySelectorAll('input, select').forEach((control) => {
+    if (draft[control.id] === undefined) return;
+    if (control.type === 'checkbox') control.checked = draft[control.id];
+    else control.value = draft[control.id];
+  });
+  form.addEventListener('input', (event) => {
+    rememberAuth();
+    event.target.removeAttribute('aria-invalid');
+    const error = form.querySelector('#t-auth-error');
+    if (error) error.hidden = true;
+  });
+  form.addEventListener('change', rememberAuth);
+  const feature = (ic, title, body) => el('li', {}, el('span', { class: 't-feature-icon' }, icon(ic)),
+    el('div', {}, el('strong', {}, T(title)), el('p', {}, T(body))));
+  page(T(isRegister ? 'create_account' : 'sign_in'),
+    el('div', { class: 't-auth-layout' },
+      el('section', { class: 't-auth-story', 'aria-labelledby': 't-story-title' },
+        el('div', { class: 't-story-copy' },
+          el('span', { class: 't-eyebrow' }, icon('globe'), T('traveller_companion')),
+          el('h2', { id: 't-story-title' }, T('auth_headline'), el('em', {}, T('auth_headline_accent'))),
+          el('p', { class: 't-story-intro' }, T('auth_intro')),
+          el('ul', { class: 't-auth-features' }, feature('paw', 'feature_alerts', 'feature_alerts_body'),
+            feature('radio', 'feature_help', 'feature_help_body'), feature('book', 'feature_guide', 'feature_guide_body'))),
+        el('div', { class: 't-story-caption' }, icon('pin'), el('span', {}, T('auth_caption')))),
+      el('section', { class: 't-auth-panel' },
+        el('div', { class: 't-auth-card' },
+          el('nav', { class: 't-auth-switch', 'aria-label': T('account_options') },
+            el('a', { href: '#/login', 'aria-current': !isRegister ? 'page' : null }, T('sign_in')),
+            el('a', { href: '#/register', 'aria-current': isRegister ? 'page' : null }, T('create_account'))),
+          form),
+        el('div', { class: 't-auth-support' }, el('a', { href: '#/guide' }, icon('book'), T('read_guidance')),
+          el('span', {}, icon('globe'), 'English / Kiswahili')),
+        emergencyLink())),
+    el('p', { class: 't-auth-footer' }, icon('shield'), T('auth_footer')));
+}
+
+function pinControl(input) {
+  const toggle = el('button', { type: 'button', class: 't-pin-toggle', 'aria-label': T('show_pin'), 'aria-pressed': 'false', 'aria-controls': input.id }, T('show'));
+  toggle.addEventListener('click', () => {
+    const visible = input.type === 'password';
+    input.type = visible ? 'text' : 'password';
+    toggle.textContent = T(visible ? 'hide' : 'show');
+    toggle.setAttribute('aria-label', T(visible ? 'hide_pin' : 'show_pin'));
+    toggle.setAttribute('aria-pressed', String(visible));
+  });
+  return el('div', { class: 't-pin-control' }, input, toggle);
+}
+
+function authError(err) {
+  if (!(err instanceof ApiError)) return T('err_connection');
+  const key = { invalid_login: 'err_login', phone_registered: 'err_registered', invalid_phone: 'err_phone' }[err.code];
+  return key ? T(key) : err.message;
 }
 
 function field(id, label, control, hint) {
@@ -160,14 +228,19 @@ function field(id, label, control, hint) {
 }
 
 function login() {
-  const phone = el('input', { id: 'l-phone', type: 'tel', autocomplete: 'tel', inputmode: 'tel', placeholder: '+255…', required: true });
-  const pin = el('input', { id: 'l-pin', type: 'password', inputmode: 'numeric', autocomplete: 'current-password', required: true });
-  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
-  const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, el('span', {}, T('sign_in')));
-  const form = el('form', { class: 't-card t-auth', novalidate: true }, el('h2', {}, T('sign_in')), err, field('l-phone', T('phone'), phone), field('l-pin', T('pin_login'), pin), btn,
-    el('p', { class: 'small' }, T('new_here'), ' ', el('a', { href: '#/register' }, T('register'))));
+  const phone = el('input', { id: 'l-phone', type: 'tel', autocomplete: 'username', inputmode: 'tel', placeholder: '+255 712 345 678', required: true, 'aria-describedby': 'l-phone-hint' });
+  const pin = el('input', { id: 'l-pin', type: 'password', inputmode: 'numeric', autocomplete: 'current-password', placeholder: T('enter_pin'), required: true, maxlength: '12' });
+  const err = el('div', { id: 't-auth-error', class: 'alert alert-error', role: 'alert', hidden: true });
+  const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, el('span', {}, T('sign_in')), icon('chevron-right'));
+  const form = el('form', { class: 't-auth-form', novalidate: true },
+    el('div', { class: 't-auth-heading' }, el('span', { class: 't-auth-emblem' }, icon('login')),
+      el('h2', {}, T('welcome_back')), el('p', {}, T('login_intro'))),
+    err, field('l-phone', T('phone'), phone, T('login_phone_hint')), field('l-pin', T('pin_login'), pinControl(pin)), btn,
+    el('p', { class: 't-auth-alternate' }, T('new_here'), ' ', el('a', { href: '#/register' }, T('create_account'))),
+    el('p', { class: 't-privacy-note' }, icon('shield'), T('login_privacy')));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    err.hidden = true;
     for (const i of [phone, pin]) i.setAttribute('aria-invalid', i.value.trim() ? 'false' : 'true');
     if (!phone.value.trim() || !pin.value.trim()) {
       err.hidden = false;
@@ -178,27 +251,32 @@ function login() {
     await busy(btn, async () => {
       try {
         await tApi.post('/api/tourist/login', { phone: phone.value, pin: pin.value });
+        authDraft.login = {};
+        authDraft.register = {};
         await loadMe();
         go('home');
       } catch (e2) {
         err.hidden = false;
-        err.textContent = e2.message;
+        err.textContent = authError(e2);
       }
     });
   });
-  page(T('sign_in'), form, emergencyLink());
-  phone.focus();
+  authLayout('login', form);
 }
 
 async function register() {
-  if (!areas.length) areas = (await api.get('/api/public/areas').catch(() => ({ areas: [] }))).areas;
+  if (!areas.length) {
+    page(T('create_account'), el('div', { class: 'view-loading', role: 'status' }, el('span', { class: 'spinner', 'aria-hidden': 'true' }), T('loading')));
+    areas = (await api.get('/api/public/areas').catch(() => ({ areas: [] }))).areas;
+    if (currentRoute() !== 'register') return;
+  }
   const today = new Date().toISOString().slice(0, 10);
   const plus = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
   const f = {
-    name: el('input', { id: 'r-name', autocomplete: 'name', required: true }),
+    name: el('input', { id: 'r-name', autocomplete: 'name', placeholder: T('name_placeholder'), required: true, minlength: '2', maxlength: '80' }),
     phone: el('input', { id: 'r-phone', type: 'tel', autocomplete: 'tel', inputmode: 'tel', placeholder: '+255…', required: true, 'aria-describedby': 'r-phone-hint' }),
-    pin: el('input', { id: 'r-pin', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', required: true, 'aria-describedby': 'r-pin-hint' }),
-    area_id: el('select', { id: 'r-area', required: true }, el('option', { value: '' }, '—'), areas.map((a) => el('option', { value: a.id }, a.name))),
+    pin: el('input', { id: 'r-pin', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', placeholder: T('pin_placeholder'), required: true, minlength: '4', maxlength: '12', pattern: '[0-9]{4,12}', 'aria-describedby': 'r-pin-hint' }),
+    area_id: el('select', { id: 'r-area', required: true }, el('option', { value: '' }, T('choose_destination')), areas.map((a) => el('option', { value: a.id }, a.name))),
     lodge: el('input', { id: 'r-lodge' }),
     trip_start: el('input', { id: 'r-start', type: 'date', value: today, required: true }),
     trip_end: el('input', { id: 'r-end', type: 'date', value: plus(3), required: true }),
@@ -207,27 +285,63 @@ async function register() {
     emergency_contact: el('input', { id: 'r-ec' }),
     sms_alerts: el('input', { id: 'r-sms', type: 'checkbox', checked: true }),
   };
-  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
-  const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, el('span', {}, T('register')));
-  const form = el('form', { class: 't-card t-auth', novalidate: true },
-    el('h2', {}, T('register')), err,
-    field('r-name', T('name'), f.name), field('r-phone', T('phone'), f.phone, T('phone_hint')), field('r-pin', T('pin'), f.pin, T('pin_hint')),
-    field('r-area', T('destination'), f.area_id), field('r-lodge', T('lodge'), f.lodge),
-    el('div', { class: 'type-grid' }, field('r-start', T('trip_start'), f.trip_start), field('r-end', T('trip_end'), f.trip_end)),
-    field('r-group', T('group'), f.group_size), field('r-nat', T('nationality'), f.nationality), field('r-ec', T('emergency_contact'), f.emergency_contact),
-    el('label', { class: 'duty-toggle' }, f.sms_alerts, el('span', {}, T('sms_alerts'))),
-    el('p', { class: 'small muted' }, icon('shield', 'icon icon-sm'), ' ', T('consent')),
-    btn, el('p', { class: 'small' }, T('have_account'), ' ', el('a', { href: '#/login' }, T('sign_in'))));
+  const err = el('div', { id: 't-auth-error', class: 'alert alert-error', role: 'alert', hidden: true });
+  const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' });
+  const heading = el('h2', { tabindex: '-1' });
+  const intro = el('p', {});
+  const steps = el('ol', { class: 't-auth-steps', 'aria-label': T('registration_progress') });
+  const account = el('fieldset', { class: 't-auth-fields' }, el('legend', { class: 'sr-only' }, T('your_account')),
+    field('r-name', T('name'), f.name), field('r-phone', T('phone'), f.phone, T('phone_hint')), field('r-pin', T('pin'), pinControl(f.pin), T('pin_hint')));
+  const areaError = !areas.length ? el('div', { class: 'alert alert-error', role: 'alert' }, T('err_areas'),
+    el('button', { type: 'button', class: 'btn btn-sm', onclick: () => { rememberAuth(); register(); } }, T('retry'))) : null;
+  const tripFields = el('fieldset', { class: 't-auth-fields' }, el('legend', { class: 'sr-only' }, T('your_trip')),
+    areaError, field('r-area', T('destination'), f.area_id), field('r-lodge', T('lodge'), f.lodge),
+    el('div', { class: 't-form-grid' }, field('r-start', T('trip_start'), f.trip_start), field('r-end', T('trip_end'), f.trip_end)),
+    field('r-group', T('group'), f.group_size),
+    el('details', { class: 't-auth-optional' }, el('summary', {}, icon('plus'), T('optional_details')),
+      field('r-nat', T('nationality'), f.nationality), field('r-ec', T('emergency_contact'), f.emergency_contact)),
+    el('label', { class: 't-sms-choice' }, f.sms_alerts, el('span', {}, T('sms_alerts'))),
+    el('p', { class: 't-privacy-note' }, icon('shield'), T('consent')));
+  const back = el('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { showStep(1); heading.focus(); } }, icon('chevron-left'), T('back'));
+  const form = el('form', { class: 't-auth-form', novalidate: true },
+    el('div', { class: 't-auth-heading' }, el('span', { class: 't-auth-emblem' }, icon('user')), heading, intro),
+    steps, err, account, tripFields, el('div', { class: 't-auth-actions' }, back, btn),
+    el('p', { class: 't-auth-alternate' }, T('have_account'), ' ', el('a', { href: '#/login' }, T('sign_in'))));
+  function showStep(step) {
+    registrationStep = step;
+    account.hidden = step !== 1;
+    tripFields.hidden = step !== 2;
+    back.hidden = step !== 2;
+    heading.textContent = T(step === 1 ? 'create_account' : 'plan_your_trip');
+    intro.textContent = T(step === 1 ? 'register_intro' : 'trip_intro');
+    clear(btn, el('span', {}, T(step === 1 ? 'continue_trip' : 'register')), icon('chevron-right'));
+    clear(steps, [1, 2].map((n) => el('li', { class: n <= step ? 'is-active' : null, 'aria-current': n === step ? 'step' : null },
+      el('span', {}, n < step ? icon('check') : String(n)), T(n === 1 ? 'your_account' : 'your_trip'))));
+    err.hidden = true;
+  }
+  function invalid(key, message) {
+    if (['name', 'phone', 'pin'].includes(key) && registrationStep !== 1) showStep(1);
+    err.hidden = false;
+    err.textContent = message;
+    f[key].setAttribute('aria-invalid', 'true');
+    f[key].setAttribute('aria-describedby', ['phone', 'pin'].includes(key) ? `${f[key].id}-hint t-auth-error` : 't-auth-error');
+    f[key].focus();
+  }
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const missing = ['name', 'phone', 'pin', 'area_id', 'trip_start', 'trip_end'].find((k) => !f[k].value.trim());
-    for (const k of ['name', 'phone', 'pin', 'area_id']) f[k].setAttribute('aria-invalid', f[k].value.trim() ? 'false' : 'true');
-    if (missing) {
-      err.hidden = false;
-      err.textContent = T('err_required');
-      f[missing].focus();
-      return;
-    }
+    err.hidden = true;
+    Object.values(f).forEach((control) => control.removeAttribute('aria-invalid'));
+    const required = registrationStep === 1 ? ['name', 'phone', 'pin'] : ['name', 'phone', 'pin', 'area_id', 'trip_start', 'trip_end'];
+    const missing = required.find((k) => !f[k].value.trim());
+    if (missing) return invalid(missing, T('err_required'));
+    if (f.name.value.trim().length < 2) return invalid('name', T('err_name'));
+    const digits = f.phone.value.replace(/[\s()-]/g, '');
+    if (!/^(\+\d{9,15}|255\d{9}|0[67]\d{8})$/.test(digits)) return invalid('phone', T('err_phone'));
+    if (!/^[0-9]{4,12}$/.test(f.pin.value)) return invalid('pin', T('err_pin'));
+    if (registrationStep === 1) { showStep(2); heading.focus(); return; }
+    if (!f.trip_start.validity.valid) return invalid('trip_start', T('err_date'));
+    if (!f.trip_end.validity.valid || f.trip_end.value < f.trip_start.value) return invalid('trip_end', T('err_dates'));
+    if (!f.group_size.validity.valid || !f.group_size.value) return invalid('group_size', T('err_group'));
     await busy(btn, async () => {
       try {
         await tApi.post('/api/tourist/register', {
@@ -235,18 +349,23 @@ async function register() {
           trip_start: f.trip_start.value, trip_end: f.trip_end.value, group_size: Number(f.group_size.value || 1), nationality: f.nationality.value || null,
           emergency_contact: f.emergency_contact.value || null, sms_alerts: f.sms_alerts.checked,
         });
+        authDraft.register = {};
+        authDraft.login = {};
+        registrationStep = 1;
         await loadMe();
         go('home');
       } catch (e2) {
         err.hidden = false;
-        err.textContent = e2.message;
+        err.textContent = authError(e2);
         const map = { phone: 'phone', pin: 'pin', trip_end: 'trip_end', name: 'name', area_id: 'area_id' };
         const bad = Object.keys(map).find((k) => e2.message.toLowerCase().includes(k.replace('_', ' ')) || e2.code === `invalid_${k}`);
-        if (bad) f[bad].focus();
+        if (bad) invalid(bad, authError(e2));
+        if (e2.code === 'phone_registered') invalid('phone', T('err_registered'));
       }
     });
   });
-  page(T('register'), form);
+  showStep(registrationStep);
+  authLayout('register', form);
 }
 
 function home() {

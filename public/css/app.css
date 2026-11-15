@@ -760,3 +760,119 @@ dialog::backdrop { background: rgba(11, 33, 24, 0.5); }
 .lg-swatch.lg-low { border-color: #4f7a63; background: rgba(79,122,99,.12); }
 .lg-dot.lg-crit { background: #a4231b; } .lg-dot.lg-hi { background: #d0521f; } .lg-dot.lg-me { background: #c88a1f; } .lg-dot.lg-lo { background: #4f7a63; }
 .t-hero + .t-card, .t-hero + .t-status, .t-hero + section { margin-top: 14px; }
+
+/* Traveller welcome and account screens. Shared auth styling stays out of the staff console. */
+.t-auth-page { background: #f4f1e8; }
+.t-auth-page .t-shell { max-width: 1440px; background: transparent; }
+.t-auth-page .t-top { position: relative; padding: 22px clamp(20px, 4vw, 64px); background: transparent; color: var(--forest-900); box-shadow: none; }
+.t-auth-page .t-brand { font-size: 1.3rem; gap: 11px; }
+.t-auth-page .t-brand .logo { width: 36px; height: 36px; }
+.t-auth-page .t-lang { border: 1px solid #d8ddcf; background: #e9ebdf; padding: 4px; }
+.t-auth-page .t-lang button { color: var(--forest-700); min-height: 36px; min-width: 48px; }
+.t-auth-page .t-lang button[aria-pressed="true"] { background: var(--forest-800); color: white; box-shadow: 0 2px 5px #173a2c18; }
+.t-auth-page .t-main { padding: 8px clamp(20px, 4vw, 64px) 26px; }
+.t-auth-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 76px); align-items: center; }
+.t-auth-story { position: relative; display: flex; flex-direction: column; justify-content: space-between; align-self: stretch; min-height: 700px; overflow: hidden; border-radius: 28px; color: #f9f6e9; background: linear-gradient(180deg, #0b2118f5 0%, #0b2118df 45%, #0b211830 82%), url('/static/img/savanna.svg') 58% bottom / auto 100% no-repeat, var(--forest-950); box-shadow: 0 18px 45px #15332216; }
+.t-story-copy { padding: clamp(28px, 3.5vw, 50px); }
+.t-eyebrow { display: inline-flex; align-items: center; gap: 8px; color: #ecd6ac; font-size: .72rem; font-weight: 650; text-transform: uppercase; letter-spacing: .13em; }
+.t-eyebrow .icon { width: 16px; height: 16px; }
+.t-auth-story h2 { color: #fffaf0; font-family: var(--display); font-size: clamp(2.4rem, 3.7vw, 3.6rem); font-weight: 500; line-height: 1.12; letter-spacing: -.035em; margin-top: 24px; text-wrap: balance; }
+.t-auth-story h2 em { display: block; color: #edc98e; font-weight: 400; }
+.t-story-intro { color: #d8e0d5; line-height: 1.75; font-size: .95rem; max-width: 36ch; margin-top: 22px; }
+.t-auth-features { list-style: none; margin: 34px 0 110px; padding: 0; display: grid; gap: 22px; }
+.t-auth-features li { display: flex; align-items: flex-start; gap: 13px; }
+.t-feature-icon { display: grid; place-items: center; width: 38px; height: 38px; flex: none; color: #edc98e; background: #ffffff0c; border: 1px solid #ffffff21; border-radius: 12px; }
+.t-auth-features strong { font-size: .88rem; font-weight: 600; }
+.t-auth-features p { color: #c8d5c8; font-size: .79rem; line-height: 1.6; margin-top: 3px; max-width: 34ch; }
+.t-story-caption { display: flex; gap: 8px; align-items: center; padding: 24px 30px; color: #fff8e5; font-size: .75rem; background: linear-gradient(transparent, #0b2118a8); }
+.t-story-caption .icon { width: 15px; height: 15px; }
+.t-auth-panel { padding: 22px 0; min-width: 0; max-width: 490px; width: 100%; justify-self: center; }
+.t-auth-card { padding: clamp(24px, 3vw, 38px); border-radius: 24px; background: var(--paper); border: 1px solid #e5dfd0; box-shadow: 0 18px 60px #253b2410, 0 2px 6px #253b2405; }
+.t-auth-switch { display: grid; grid-template-columns: 1fr 1fr; padding: 5px; gap: 4px; background: #f0efe6; border-radius: 12px; margin-bottom: 30px; }
+.t-auth-switch a { display: flex; justify-content: center; align-items: center; min-height: 44px; padding: 9px 6px; text-decoration: none; color: var(--ink-muted); font-weight: 600; font-size: .87rem; text-align: center; border-radius: 8px; }
+.t-auth-switch a[aria-current="page"] { background: var(--paper); color: var(--forest-800); box-shadow: 0 2px 7px #172b1610; }
+.t-auth-switch a:hover { color: var(--forest-800); background: #fffdf890; }
+.t-auth-form { display: grid; gap: 20px; }
+.t-auth-heading { display: grid; justify-items: start; gap: 10px; margin-bottom: 5px; }
+.t-auth-emblem { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid #d9e4d7; border-radius: 14px; color: var(--forest-700); background: #eef3e9; margin-bottom: 6px; }
+.t-auth-emblem .icon { width: 23px; height: 23px; }
+.t-auth-heading h2 { font: 500 clamp(1.8rem, 2.6vw, 2.25rem)/1.15 var(--display); letter-spacing: -.035em; }
+.t-auth-heading p { color: var(--ink-muted); font-size: .87rem; line-height: 1.65; }
+.t-auth-form .field { margin: 0; min-width: 0; gap: 8px; }
+.t-auth-form label { font-size: .81rem; }
+.t-auth-form input:not([type="checkbox"]), .t-auth-form select { font: inherit; font-size: 16px; color: var(--ink); min-width: 0; width: 100%; min-height: 50px; padding: 12px 14px; background-color: #fffefb; border: 1px solid #d7d8cb; border-radius: 10px; }
+.t-auth-form input::placeholder { color: #7b8175; font-size: .88rem; opacity: 1; }
+.t-auth-form select { padding-right: 32px; }
+.t-auth-form input:focus-visible, .t-auth-form select:focus-visible { border-color: var(--forest-500); box-shadow: 0 0 0 3px #3a755922; }
+.t-auth-form .hint { line-height: 1.55; font-size: .74rem; }
+.t-pin-control { position: relative; }
+.t-pin-control input { padding-right: 72px !important; }
+.t-pin-toggle { position: absolute; right: 6px; top: 4px; min-width: 58px; min-height: 42px; padding: 8px; font: inherit; font-size: .75rem; font-weight: 650; color: var(--forest-700); border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.t-pin-toggle:hover { background: var(--forest-50); }
+.t-auth-form .btn-primary { background: var(--forest-800); border-color: var(--forest-800); border-radius: 10px; font-size: .87rem; box-shadow: 0 4px 9px #173a2c14; }
+.t-auth-form .btn-primary:hover { background: var(--forest-950); }
+.t-auth-form .btn-primary .icon { margin-left: 6px; width: 17px; height: 17px; }
+.t-auth-alternate { text-align: center; font-size: .8rem; color: var(--ink-muted); }
+.t-auth-alternate a { font-weight: 650; color: var(--forest-700); }
+.t-privacy-note { display: flex; gap: 8px; color: var(--ink-muted); font-size: .72rem; line-height: 1.65; }
+.t-privacy-note .icon { color: var(--forest-500); width: 15px; height: 15px; margin-top: 2px; }
+.t-auth-support { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px 24px; margin-top: 22px; font-size: .75rem; color: var(--ink-muted); }
+.t-auth-support a, .t-auth-support > span { display: inline-flex; align-items: center; gap: 6px; }
+.t-auth-support a { text-decoration: none; }
+.t-auth-support a:hover { text-decoration: underline; }
+.t-auth-support .icon { width: 14px; height: 14px; }
+.t-auth-panel .emergency-line { background: transparent; border: 0; margin-top: 12px; font-size: .76rem; font-weight: 550; padding: 12px 0; }
+.t-auth-panel .emergency-line:hover { text-decoration: underline; }
+.t-auth-panel .emergency-line .icon { width: 15px; height: 15px; }
+.t-auth-footer { display: flex; align-items: flex-start; justify-content: center; gap: 7px; font-size: .7rem; color: var(--ink-muted); text-align: center; margin: 24px auto 0; max-width: 70ch; }
+.t-auth-footer .icon { width: 14px; height: 14px; }
+.t-auth-steps { display: flex; list-style: none; padding: 0 0 18px; margin: 0; border-bottom: 1px solid #e7e5d9; gap: 20px; }
+.t-auth-steps li { display: flex; align-items: center; gap: 7px; color: var(--ink-muted); font-size: .73rem; }
+.t-auth-steps li > span { display: grid; place-items: center; width: 25px; height: 25px; border: 1px solid #dddccd; border-radius: 50%; font-size: .7rem; flex: none; }
+.t-auth-steps li.is-active { color: var(--forest-700); font-weight: 650; }
+.t-auth-steps li.is-active > span { background: var(--forest-700); border-color: var(--forest-700); color: white; }
+.t-auth-steps .icon { width: 13px; height: 13px; }
+.t-auth-fields { border: 0; padding: 0; margin: 0; display: grid; gap: 18px; min-width: 0; }
+.t-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.t-auth-actions { display: flex; gap: 10px; }
+.t-auth-actions .btn-ghost { flex: none; }
+.t-auth-optional { padding: 14px; border: 1px solid #e2e2d5; border-radius: 10px; }
+.t-auth-optional summary { display: flex; gap: 7px; align-items: center; color: var(--forest-700); cursor: pointer; font-size: .8rem; font-weight: 600; }
+.t-auth-optional .field { margin-top: 16px; }
+.t-sms-choice { display: flex; align-items: flex-start; gap: 10px; padding: 13px; border-radius: 10px; background: var(--forest-50); font-size: .78rem !important; line-height: 1.6; font-weight: 450; }
+.t-sms-choice input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--forest-700); }
+@media (min-width: 1440px) { .t-auth-layout { gap: 90px; } }
+@media (max-width: 900px) {
+  .t-auth-layout { gap: 28px; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); }
+  .t-story-copy { padding: 28px; }
+  .t-auth-story h2 { font-size: 2.5rem; }
+  .t-auth-features { gap: 18px; }
+}
+@media (max-width: 700px) {
+  .t-auth-page .t-top { padding: 17px 20px; }
+  .t-auth-page .t-brand { font-size: 1.14rem; }
+  .t-auth-page .t-main { padding: 0 18px 24px; }
+  .t-auth-layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .t-auth-story { min-height: 0; border-radius: 21px; background-position: center, 60% 64%; background-size: auto, cover; }
+  .t-story-copy { padding: 26px 25px 36px; }
+  .t-eyebrow { font-size: .65rem; }
+  .t-auth-story h2 { font-size: clamp(2.05rem, 7.6vw, 3rem); margin-top: 14px; max-width: 18ch; }
+  .t-story-intro, .t-auth-features, .t-story-caption { display: none; }
+  .t-auth-panel { max-width: 490px; padding: 0; margin: -12px auto 0; position: relative; z-index: 1; width: calc(100% - 16px); }
+  .t-auth-card { padding: 24px 22px; border-radius: 20px; }
+  .t-auth-switch { margin-bottom: 24px; }
+  .t-auth-heading h2 { font-size: 1.85rem; }
+  .t-auth-heading { gap: 8px; }
+  .t-auth-emblem { display: none; }
+  .t-auth-support { gap: 12px; font-size: .71rem; }
+  .t-auth-footer { font-size: .66rem; margin-top: 16px; }
+}
+@media (max-width: 380px) {
+  .t-auth-page .t-top { padding-inline: 14px; }
+  .t-auth-page .t-main { padding-inline: 10px; }
+  .t-auth-page .t-brand { font-size: 1rem; gap: 7px; }
+  .t-auth-page .t-brand .logo { width: 29px; height: 29px; }
+  .t-auth-card { padding: 22px 16px; }
+  .t-auth-steps { gap: 12px; }
+  .t-form-grid { grid-template-columns: minmax(0, 1fr); }
+}
