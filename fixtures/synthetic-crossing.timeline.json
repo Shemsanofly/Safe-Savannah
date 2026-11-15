@@ -1,0 +1,17 @@
+{
+  "description": "SIMULATED crossing for pipeline testing only. A grey block stands in for an elephant: it grazes outside the zone (0-8s), walks onto Guest path A (enters ~11s), lingers, leaves to the right (~22s), then the scene stays empty long enough for the zone to clear (>10s) before the clip loops.",
+  "durationSeconds": 40,
+  "label": "elephant",
+  "confidence": 0.82,
+  "width": 1280,
+  "height": 720,
+  "keyframes": [
+    { "t": 0, "box": [0.03, 0.18, 0.20, 0.42] },
+    { "t": 8, "box": [0.08, 0.20, 0.25, 0.44] },
+    { "t": 14, "box": [0.38, 0.58, 0.55, 0.82] },
+    { "t": 19, "box": [0.48, 0.62, 0.65, 0.86] },
+    { "t": 24, "box": [0.95, 0.50, 1.12, 0.74] },
+    { "t": 24.5, "box": null },
+    { "t": 40, "box": null }
+  ]
+}

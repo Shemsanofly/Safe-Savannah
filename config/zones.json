@@ -1,0 +1,15 @@
+{
+  "zones": [
+    {
+      "id": "guest-path-a",
+      "cameraId": "cam-1",
+      "label": "Guest path A",
+      "polygon": [
+        [0.35, 0.55],
+        [0.65, 0.55],
+        [0.80, 0.98],
+        [0.20, 0.98]
+      ]
+    }
+  ]
+}

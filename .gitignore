@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+.env
+models/*.onnx
+models/*.pt
+fixtures/*.mp4
+fixtures/*.mov
+fixtures/*.mkv
+fixtures/local/
+*.log
+models/*.manifest.json

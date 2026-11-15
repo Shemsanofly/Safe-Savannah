@@ -1,0 +1,46 @@
+{
+  "name": "safe-savannah",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Safe Savannah AI — fixed-camera elephant zone alert MVP (TypeScript + PostgreSQL)",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/main.ts all",
+    "start": "node dist/src/main.js all",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "api": "tsx src/main.ts api",
+    "vision": "tsx src/main.ts vision",
+    "notifier": "tsx src/main.ts notifier",
+    "migrate": "tsx src/main.ts migrate",
+    "operator:add": "tsx src/cli/operatorAdd.ts",
+    "sim:events": "tsx src/cli/simEvents.ts",
+    "fixtures:synthetic": "tsx src/cli/makeSyntheticClip.ts",
+    "eval": "tsx src/cli/evalClips.ts",
+    "report:timings": "tsx src/cli/reportTimings.ts",
+    "model:check": "tsx src/cli/modelCheck.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/formbody": "^8.0.2",
+    "@fastify/static": "^10.1.11",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.6.1",
+    "onnxruntime-node": "^1.23.0",
+    "pg": "^8.16.3",
+    "sharp": "^0.35.5",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.15.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  }
+}
