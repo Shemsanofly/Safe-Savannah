@@ -1,14 +1,31 @@
 import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
-import type { Queryable } from '../db/pool.js';
+import { withTx, type Db, type Queryable } from '../db/pool.js';
+import { DomainError } from './events.js';
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, keylen: number) => Promise<Buffer>;
+
+export type Role = 'officer' | 'supervisor';
+export const ROLES: readonly Role[] = ['officer', 'supervisor'];
 
 export interface Operator {
   id: string;
   name: string;
+  role: Role;
   active: boolean;
 }
+
+export interface SessionOperator extends Operator {
+  sessions_valid_after: Date;
+}
+
+export interface OperatorRow extends Operator {
+  created_at: Date;
+  updated_at: Date;
+}
+
+export const OPERATOR_ID_RE = /^[a-z0-9_-]{2,32}$/i;
+export const PIN_RE = /^\d{4,12}$/;
 
 export async function hashPin(pin: string): Promise<string> {
   const salt = randomBytes(16);
@@ -24,29 +41,121 @@ export async function verifyPin(pin: string, stored: string): Promise<boolean> {
   return timingSafeEqual(actual, expected);
 }
 
-export async function upsertOperator(db: Queryable, op: { id: string; name: string; pin: string }): Promise<void> {
-  if (!/^[a-z0-9_-]{2,32}$/i.test(op.id)) throw new Error('operator id: 2-32 letters, digits, _ or -');
-  if (!/^\d{4,12}$/.test(op.pin)) throw new Error('PIN must be 4-12 digits');
+function validateId(id: string): void {
+  if (!OPERATOR_ID_RE.test(id)) throw new DomainError(400, 'invalid_operator_id', 'Operator ID: 2–32 letters, digits, _ or -');
+}
+function validatePin(pin: string): void {
+  if (!PIN_RE.test(pin)) throw new DomainError(400, 'invalid_pin', 'PIN must be 4–12 digits');
+}
+function validateName(name: string): string {
+  const n = name.trim();
+  if (n.length < 2 || n.length > 60) throw new DomainError(400, 'invalid_name', 'Name must be 2–60 characters');
+  return n;
+}
+
+/** CLI helper: create or update an operator (re-activates and resets the PIN). */
+export async function upsertOperator(db: Queryable, op: { id: string; name: string; pin: string; role?: Role }): Promise<void> {
+  validateId(op.id);
+  validatePin(op.pin);
+  const name = validateName(op.name);
   await db.query(
-    `INSERT INTO operators (id, name, pin_hash) VALUES ($1, $2, $3)
-     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, pin_hash = EXCLUDED.pin_hash, active = true`,
-    [op.id, op.name, await hashPin(op.pin)],
+    `INSERT INTO operators (id, name, pin_hash, role) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, pin_hash = EXCLUDED.pin_hash, active = true,
+       role = COALESCE($5, operators.role), updated_at = now(), sessions_valid_after = now()`,
+    [op.id, name, await hashPin(op.pin), op.role ?? 'officer', op.role ?? null],
   );
+}
+
+export async function countActiveSupervisors(db: Queryable): Promise<number> {
+  const r = await db.query<{ n: string }>(`SELECT count(*) AS n FROM operators WHERE active AND role = 'supervisor'`);
+  return Number(r.rows[0]?.n ?? 0);
 }
 
 // Used for unknown ids so a failed login costs the same scrypt work either way.
 let dummyHash: Promise<string> | null = null;
 
 export async function authenticate(db: Queryable, id: string, pin: string): Promise<Operator | null> {
-  const r = await db.query<Operator & { pin_hash: string }>('SELECT id, name, active, pin_hash FROM operators WHERE id = $1', [id]);
+  const r = await db.query<Operator & { pin_hash: string }>('SELECT id, name, role, active, pin_hash FROM operators WHERE id = $1', [id]);
   const row = r.rows[0];
   dummyHash ??= hashPin('000000');
   const ok = await verifyPin(pin, row?.pin_hash ?? (await dummyHash));
   if (!row || !row.active || !ok) return null;
-  return { id: row.id, name: row.name, active: row.active };
+  return { id: row.id, name: row.name, role: row.role, active: row.active };
 }
 
 export async function getOperator(db: Queryable, id: string): Promise<Operator | null> {
-  const r = await db.query<Operator>('SELECT id, name, active FROM operators WHERE id = $1', [id]);
+  const r = await db.query<Operator>('SELECT id, name, role, active FROM operators WHERE id = $1', [id]);
   return r.rows[0] ?? null;
+}
+
+/** Operator plus the cutoff before which their sessions are no longer valid. */
+export async function getSessionOperator(db: Queryable, id: string): Promise<SessionOperator | null> {
+  const r = await db.query<SessionOperator>('SELECT id, name, role, active, sessions_valid_after FROM operators WHERE id = $1', [id]);
+  return r.rows[0] ?? null;
+}
+
+export async function listOperators(db: Queryable): Promise<OperatorRow[]> {
+  const r = await db.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at FROM operators ORDER BY active DESC, name');
+  return r.rows;
+}
+
+export async function createOperator(db: Queryable, op: { id: string; name: string; pin: string; role: Role }): Promise<OperatorRow> {
+  validateId(op.id);
+  validatePin(op.pin);
+  const name = validateName(op.name);
+  const r = await db.query<OperatorRow>(
+    `INSERT INTO operators (id, name, pin_hash, role) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id, name, role, active, created_at, updated_at`,
+    [op.id, name, await hashPin(op.pin), op.role],
+  );
+  if (!r.rows[0]) throw new DomainError(409, 'operator_exists', `Operator ID "${op.id}" is already taken`);
+  return r.rows[0];
+}
+
+/**
+ * Change name, role or active flag. Refuses changes that would leave nobody able
+ * to manage operators, and refuses a supervisor deactivating or demoting themselves.
+ */
+export async function updateOperator(
+  db: Db,
+  actorId: string,
+  id: string,
+  patch: { name?: string; role?: Role; active?: boolean },
+): Promise<OperatorRow> {
+  return withTx(db, async (c) => {
+    // Serialize supervisor changes so two concurrent demotions cannot both pass the guard.
+    await c.query('SELECT pg_advisory_xact_lock(727275)');
+    const cur = (await c.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at FROM operators WHERE id = $1 FOR UPDATE', [id])).rows[0];
+    if (!cur) throw new DomainError(404, 'not_found', 'Operator not found');
+    const next = {
+      name: patch.name !== undefined ? validateName(patch.name) : cur.name,
+      role: patch.role ?? cur.role,
+      active: patch.active ?? cur.active,
+    };
+    if (id === actorId && (!next.active || next.role !== 'supervisor')) {
+      throw new DomainError(409, 'self_lockout', 'You cannot deactivate or demote your own account');
+    }
+    const losingSupervisor = cur.role === 'supervisor' && cur.active && (next.role !== 'supervisor' || !next.active);
+    if (losingSupervisor && (await countActiveSupervisors(c)) <= 1) {
+      throw new DomainError(409, 'last_supervisor', 'At least one active supervisor is required');
+    }
+    const r = await c.query<OperatorRow>(
+      `UPDATE operators SET name = $2, role = $3, active = $4, updated_at = now(),
+              sessions_valid_after = CASE WHEN $5 THEN now() ELSE sessions_valid_after END
+        WHERE id = $1
+       RETURNING id, name, role, active, created_at, updated_at`,
+      [id, next.name, next.role, next.active, next.role !== cur.role || next.active !== cur.active],
+    );
+    return r.rows[0]!;
+  });
+}
+
+export async function setOperatorPin(db: Queryable, id: string, pin: string): Promise<void> {
+  validatePin(pin);
+  const r = await db.query('UPDATE operators SET pin_hash = $2, updated_at = now(), sessions_valid_after = now() WHERE id = $1', [
+    id,
+    await hashPin(pin),
+  ]);
+  if (!r.rowCount) throw new DomainError(404, 'not_found', 'Operator not found');
 }

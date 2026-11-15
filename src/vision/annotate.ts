@@ -56,6 +56,15 @@ export async function annotateFrame(frame: Frame, opts: AnnotateOptions, quality
     .toBuffer();
 }
 
+/** JPEG of the original (un-padded) frame with nothing drawn on it (overlays are drawn by the dashboard). */
+export async function frameJpeg(frame: Frame, quality = 75): Promise<Buffer> {
+  const lb = frame.letterbox;
+  return sharp(frame.data, { raw: { width: lb.size, height: lb.size, channels: 3 } })
+    .extract({ left: lb.padX, top: lb.padY, width: lb.scaledW, height: lb.scaledH })
+    .jpeg({ quality })
+    .toBuffer();
+}
+
 /** Write via temp file + rename so readers never see a half-written JPEG. */
 export async function writeAtomic(file: string, data: Buffer): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });

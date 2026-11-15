@@ -42,7 +42,7 @@ describe.skipIf(!available)('HTTP API (PostgreSQL)', () => {
   });
   beforeEach(async () => {
     await truncateAll(db);
-    await upsertOperator(db, { id: 'duty1', name: 'Asha', pin: '4821' });
+    await upsertOperator(db, { id: 'duty1', name: 'Asha', pin: '4821', role: 'supervisor' });
     const res = await app.inject({ method: 'POST', url: '/login', payload: 'operatorId=duty1&pin=4821', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
     expect(res.statusCode).toBe(302);
     cookie = String(res.headers['set-cookie']).split(';')[0]!;
@@ -62,7 +62,11 @@ describe.skipIf(!available)('HTTP API (PostgreSQL)', () => {
 
   it('GET /api/events returns events with separate notification status; zones without a live camera are UNKNOWN', async () => {
     await openEvent(db, sampleEvent(), ['duty']);
-    await db.query(`INSERT INTO cameras (id, label, source_kind, detector, last_frame_at) VALUES ('cam-1', 'Cam', 'file', 'x', now() - interval '1 minute')`);
+    // Worker alive and connected, but the last frame is old → "stale".
+    await db.query(
+      `INSERT INTO cameras (id, label, source_kind, detector, last_frame_at, worker_seen_at, connection_state)
+       VALUES ('cam-1', 'Cam', 'file', 'x', now() - interval '1 minute', now(), 'streaming')`,
+    );
     await db.query(`INSERT INTO zone_status (camera_id, zone_id, zone_label, state) VALUES ('cam-1', 'guest-path-a', 'Guest path A', 'armed')`);
     const res = await api('GET', '/api/events');
     expect(res.statusCode).toBe(200);

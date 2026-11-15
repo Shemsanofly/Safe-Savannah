@@ -4,3 +4,8 @@ import path from 'node:path';
 export function liveFramePath(dataDir: string, cameraId: string): string {
   return path.join(dataDir, 'live', `${cameraId}.jpg`);
 }
+
+/** Detections for the latest live frame, drawn as an overlay by the dashboard. */
+export function liveMetaPath(dataDir: string, cameraId: string): string {
+  return path.join(dataDir, 'live', `${cameraId}.json`);
+}

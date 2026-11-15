@@ -15,7 +15,7 @@ Built with **TypeScript (Node 22)** and **PostgreSQL**.
 ## How it works
 
 ```
-camera / replay ──ffmpeg──▶ vision worker ──▶ zone rule ──▶ PostgreSQL ──▶ dashboard (polls every 2 s)
+camera / replay ──ffmpeg──▶ vision worker ──▶ zone rule ──▶ PostgreSQL ──▶ dashboard (polls every 2.5 s)
   (5 fps, 640² letterbox)   YOLO11n ONNX     (feet in       events          acknowledge, handoff,
                             "elephant"        polygon ×3)   + SMS outbox     close / false alert
                                                               │ LISTEN/NOTIFY
@@ -30,7 +30,7 @@ supervisor, so model inference never blocks the dashboard.
 |---|---|
 | `vision` | ffmpeg decodes the source at `SAMPLE_FPS` into a letterboxed 640×640 frame. Only the newest frame is kept: if inference falls behind, old frames are dropped and counted, so lag does not build up. Runs the detector, applies the zone rule, writes the alert and SMS job **in one transaction**, refreshes `last_seen_at`, and writes a camera heartbeat and an annotated live frame. |
 | `notifier` | Transactional-outbox worker. It wakes on `NOTIFY` from new alerts and polls for retries. It uses `FOR UPDATE SKIP LOCKED`, retries known transient failures with capped backoff, marks ambiguous outcomes as `unknown`, and expires stale jobs. |
-| `api` | Fastify server. It serves the login, the dashboard, the JSON API, authenticated snapshots and the live frame, plus the provider webhooks (optionally on a separate webhook-only port). |
+| `api` | Fastify server. It serves the login, the dashboard, the JSON API, authenticated snapshots and the live frame, plus the provider webhooks (optionally on a separate webhook-only port). Pages are sent with a strict Content-Security-Policy (no inline scripts, same-origin only), and nothing is loaded from a CDN, so the dashboard works on an offline lodge network. |
 
 ### Zone rule (`src/domain/zoneMonitor.ts`)
 
@@ -83,6 +83,9 @@ npm run migrate
 ```bash
 npm run operator:add -- --id duty1 --name "Asha (duty manager)" --pin 4821
 ```
+
+The first operator you create is a **supervisor**. Supervisors add further operators from **Settings**, or
+with `--role officer|supervisor` on the same command.
 
 ### A. Simulated crossing (no model needed)
 
@@ -161,14 +164,71 @@ Delivery reports update notification state only. They never change who owns the 
 callback to `/webhooks/ussd?token=...`. The menu is: `1` lists active alerts; `2` → alert number → review →
 `1` to confirm the acknowledgement. Nothing is written before that confirmation. USSD cannot push alerts.
 
+## Using the dashboard
+
+Open http://127.0.0.1:8080 and sign in. The top bar always shows how many incidents need acknowledgement, the
+camera state, whether the footage is simulated, the SMS mode and when the screen last updated. If the browser
+loses the server, a red banner says so, and the last known status is greyed out and stamped "Status as of …".
+
+| Screen | What it is for |
+|---|---|
+| **Overview** | Incidents needing action (with one-click acknowledge), the live camera with zone and detection overlays, zone status and SMS health. On narrow screens an urgent incident is shown above the camera. |
+| **Incidents** | Search (SS-number, zone, officer name or note text), filter by status, detection source, zone, SMS state, owner and date, then sort and page through results. Filters are kept in the URL and stay put while results refresh. Supervisors can export the current filter to CSV. |
+| **Incident detail** | Snapshot, detection facts, owner and time to acknowledge. Tabs for **Log handoff** (radio, phone, in person), **Close incident**, **False alert** (with a reason) and **Add note**. Also shows SMS history with every send attempt and a merged, chronological activity log. |
+| **History & reports** | Counts, median time to acknowledge or close, and SMS outcomes for a date range in lodge time. Includes a per-day chart with a table view, and the same range in the incident list or CSV. Empty ranges say so and show no averages. |
+| **SMS notifications** | Every outbox message with plain-language state and what to do about failures. A separate **Mock outbox** lists messages that never left the laptop, and supervisors get a demo uplink switch. |
+| **Settings** | A read-only view of the camera, detection rule, time zone and SMS set-up. Phone numbers are masked and no credentials are ever sent to the browser. Supervisors also see technical details and manage operators: add, change role, deactivate, reset PIN. |
+| **Guide** | The five-step workflow and a glossary for every status label. |
+
+The camera panel shows one of four states: **Live**, **Reconnecting** (the worker is retrying a failed
+source), **Stale** (connected but no new frames) or **Offline** (the worker is not reporting). Anything other
+than Live shows the zone as **UNKNOWN**. Feed controls work as follows:
+
+- **Pause view** freezes the picture while detection carries on.
+- **Zone** and **Detections** toggle the overlays.
+- **Refresh** loads the newest frame.
+- **Full screen** shows the feed full screen.
+
+Keyboard users get a skip link, visible amber focus rings, and arrow-key tabs on incidents. Moving to a new
+screen puts focus on its heading. The layout adapts to phones (bottom tab bar), tablets (icon rail) and
+desktops, and it respects reduced-motion settings.
+
+### Roles
+
+| | Duty officer | Supervisor |
+|---|---|---|
+| View everything, acknowledge, log handoffs and notes, close, mark false alerts, request SMS resend | ✓ | ✓ |
+| Export incidents to CSV | | ✓ |
+| Manage operators (add, change role, deactivate, reset PIN) | | ✓ |
+| See technical settings and raw camera errors; use demo controls | | ✓ |
+
+The server enforces every one of these permissions. Changing someone's role, deactivating them or resetting
+their PIN ends their existing sessions. You cannot deactivate or demote yourself, and the last active
+supervisor cannot be removed.
+
+### HTTP API (signed-in session required)
+
+| Route | Purpose |
+|---|---|
+| `GET /api/overview` | Counts, camera state (live/reconnecting/stale/offline), zones with outlines, active incidents and SMS health |
+| `GET /api/incidents` | Search, filter, sort and page (`q, status, source, zone, sms, owner, from, to, sort, order, page, pageSize`) |
+| `GET /api/incidents/:id` | Detail with actions, SMS jobs with their attempt log, and a merged timeline |
+| `GET /api/incidents/export.csv` | CSV of the same filters (supervisors). Times are UTC; cells that could run as spreadsheet formulas are neutralised |
+| `GET /api/reports/summary?from&to&source` | Summary figures computed from stored records, by day in lodge time |
+| `GET /api/notifications` | Outbox jobs by state group, plus the mock outbox |
+| `GET /api/settings` | Configuration view with no secrets; technical section for supervisors |
+| `GET/POST/PATCH /api/operators…` | Operator management (supervisors) |
+| `GET /api/cameras/:id/live.jpg`, `live.json` | Latest clean frame plus detection metadata for client-drawn overlays |
+| `POST /api/events/:id/acknowledge`, `/actions`, `POST /api/notifications/:id/resend` | Incident workflow (unchanged) |
+
 ## Judge demo script
 
 1. Show the camera view: the elephant is **outside** the dashed polygon, so no alert.
 2. The elephant crosses. After about 3 frames, the **SS-0xx** card opens, the mock (or sandbox) SMS shows as
    *accepted by provider*, and the snapshot shows the triggering box.
-3. Click **Acknowledge — I take ownership**, then **Log handoff** (Radio, "Guide Juma ch.3, guests held at
+3. Click **Acknowledge**, open the incident, and use **Log handoff** (Radio, "Guide Juma ch.3, guests held at
    lodge").
-4. Click **DEMO: simulate SMS uplink → down**. Let the clip loop: the camera still detects, the alert still
+4. On **SMS notifications**, set **Demo: simulate the SMS uplink** to **Down**. Let the clip loop: the camera still detects, the alert still
    opens on the local dashboard, and the SMS shows *Queued — provider unreachable, retrying at …*. Switch the
    uplink back **up** and the queued SMS goes out. For a real outage, unplug the network instead. Messages
    older than `SMS_FRESHNESS_SECONDS` are marked **expired**, not sent late.
@@ -195,6 +255,10 @@ dropped. Tests that need a database or ffmpeg are skipped when either is unavail
 | Camera not live → zone shown UNKNOWN | `test/api.test.ts` |
 | Africa's Talking request/response semantics | `test/notify.test.ts` |
 | USSD allowlist and confirm-before-write | `test/api.test.ts` |
+| Incident search, filters, sort and pagination; detail timeline order; CSV export (supervisor-only, formula-safe) | `test/operations.test.ts` |
+| Reports come only from stored records; empty ranges return no averages | `test/operations.test.ts` |
+| Live / reconnecting / stale / offline camera states; settings never expose secrets | `test/operations.test.ts` |
+| Roles enforced on the server; lock-out guards; PIN reset and role change end sessions; strict CSP | `test/operations.test.ts` |
 
 ### Per-clip evaluation and timing
 
@@ -233,12 +297,12 @@ Test each of these on its own:
 ```
 src/domain      zone rule, geometry, zone config, SS-### refs  (pure, unit-tested)
 src/vision      ffmpeg frame source, YOLO decode + ONNX detector, scripted detector, annotation, worker
-src/store       PostgreSQL access: events/actions, operators, camera + zone status, dashboard query
+src/store       PostgreSQL access: events/actions, incident search/reports, operators, camera + zone status
 src/notify      outbox worker, Africa's Talking adapter, mock adapter, message text
-src/api         Fastify server, pages, USSD menu
+src/api         Fastify server, pages (login + app shell), camera state, CSV, USSD menu
 src/cli         operator:add, sim:events, fixtures:synthetic, eval, report:timings, model:check
 migrations      SQL schema (applied by `npm run migrate` / on `npm run dev`)
-public          dashboard JS + CSS (no build step)
+public          dashboard: css/app.css, js/ (ES modules, one per screen), icons.svg (no build step)
 ```
 
 `npm run sim:events` injects a **SYNTHETIC TEST** alert, so you can work on the dashboard and SMS path without

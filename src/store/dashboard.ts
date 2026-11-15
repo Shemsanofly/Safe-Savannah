@@ -13,6 +13,12 @@ export interface CameraRow {
   dropped_frames: number;
   last_error: string | null;
   last_error_at: Date | null;
+  connection_state: string;
+  worker_seen_at: Date | null;
+  reconnect_attempts: number;
+  next_retry_at: Date | null;
+  frame_width: number | null;
+  frame_height: number | null;
 }
 
 export interface ZoneStatusRow {

@@ -6,9 +6,9 @@ import { ZoneMonitor, type FrameDecision } from '../domain/zoneMonitor.js';
 import { loadZones } from '../domain/zones.js';
 import { errMsg, type Logger } from '../log.js';
 import { activeEventFor, openEvent, refreshEvent } from '../store/events.js';
-import { recordCameraError, upsertCamera, upsertZoneStatus } from '../store/status.js';
-import { liveFramePath } from '../paths.js';
-import { annotateFrame, writeAtomic } from './annotate.js';
+import { cameraWorkerHeartbeat, recordCameraError, upsertCamera, upsertZoneStatus } from '../store/status.js';
+import { liveFramePath, liveMetaPath } from '../paths.js';
+import { annotateFrame, frameJpeg, writeAtomic } from './annotate.js';
 import type { Detector } from './detector.js';
 import { ffmpegFrames, LatestFrameSlot, sourceKind, type Frame } from './frameSource.js';
 import { OnnxYoloDetector } from './onnxDetector.js';
@@ -31,6 +31,7 @@ export async function createDetector(cfg: AppConfig): Promise<Detector> {
 /** Pump frames from ffmpeg into the slot forever, restarting ffmpeg on failure. */
 async function pumpFrames(cfg: AppConfig, slot: LatestFrameSlot, db: Db, log: Logger, signal: AbortSignal): Promise<void> {
   let backoff = 1_000;
+  let attempt = 0;
   while (!signal.aborted) {
     try {
       for await (const frame of ffmpegFrames(
@@ -46,12 +47,14 @@ async function pumpFrames(cfg: AppConfig, slot: LatestFrameSlot, db: Db, log: Lo
       )) {
         slot.put(frame);
         backoff = 1_000;
+        attempt = 0;
       }
       if (!signal.aborted) throw new Error('video source ended');
     } catch (err) {
       if (signal.aborted) return;
-      log.warn('camera source failed; retrying', { error: errMsg(err), retryInMs: backoff });
-      await recordCameraError(db, cfg.CAMERA_ID, errMsg(err)).catch(() => undefined);
+      attempt += 1;
+      log.warn('camera source failed; retrying', { error: errMsg(err), retryInMs: backoff, attempt });
+      await recordCameraError(db, cfg.CAMERA_ID, errMsg(err), { attempt, retryInMs: backoff }).catch(() => undefined);
       await new Promise((r) => setTimeout(r, backoff));
       backoff = Math.min(backoff * 2, 15_000);
     }
@@ -110,6 +113,8 @@ export async function runVisionWorker(cfg: AppConfig, db: Db, log: Logger, signa
     const now = Date.now();
     if (!frame) {
       // No frame: do not touch last_frame_at; the dashboard shows the feed as stale / zone UNKNOWN.
+      // Still report that the worker itself is alive, so "reconnecting" is distinguishable from "offline".
+      await cameraWorkerHeartbeat(db, cfg.CAMERA_ID).catch(() => undefined);
       continue;
     }
 
@@ -154,8 +159,24 @@ export async function runVisionWorker(cfg: AppConfig, db: Db, log: Logger, signa
 
       if (now - lastLive > 500) {
         lastLive = now;
-        const jpeg = await annotateFrame(frame, { zones, detections, hits: allHits, targetClass: cfg.TARGET_CLASS, banner });
-        await writeAtomic(liveFramePath(cfg.DATA_DIR, cfg.CAMERA_ID), jpeg);
+        // Clean frame + detection metadata; the dashboard draws zone and box overlays (toggleable).
+        const hitSet = new Set(allHits);
+        const meta = {
+          cameraId: cfg.CAMERA_ID,
+          frameAt: new Date(frame.receivedAt).toISOString(),
+          width: frame.letterbox.srcW,
+          height: frame.letterbox.srcH,
+          source: detector.source,
+          detections: detections.map((d) => ({
+            label: d.label,
+            confidence: Math.round(d.confidence * 1000) / 1000,
+            box: d.box,
+            inZone: hitSet.has(d),
+            countsForAlert: d.label === cfg.TARGET_CLASS && d.confidence >= cfg.CONFIDENCE_THRESHOLD,
+          })),
+        };
+        await writeAtomic(liveFramePath(cfg.DATA_DIR, cfg.CAMERA_ID), await frameJpeg(frame));
+        await writeAtomic(liveMetaPath(cfg.DATA_DIR, cfg.CAMERA_ID), Buffer.from(JSON.stringify(meta)));
       }
 
       if (now - lastHeartbeat > 1_000) {
@@ -169,6 +190,8 @@ export async function runVisionWorker(cfg: AppConfig, db: Db, log: Logger, signa
           lastInferenceMs: inferenceMsTotal / processedSinceHeartbeat,
           processedFps: processedSinceHeartbeat / elapsed,
           droppedFrames: slot.dropped,
+          frameWidth: frame.letterbox.srcW,
+          frameHeight: frame.letterbox.srcH,
         });
         lastHeartbeat = now;
         processedSinceHeartbeat = 0;

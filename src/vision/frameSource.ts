@@ -69,7 +69,9 @@ export interface ProbeResult {
 }
 
 export async function probe(source: string, extraInputArgs: string[] = [], ffprobePath = 'ffprobe'): Promise<ProbeResult> {
-  const { stdout } = await execFileAsync(
+  let stdout: string;
+  try {
+    ({ stdout } = await execFileAsync(
     ffprobePath,
     [
       '-v', 'error',
@@ -80,7 +82,14 @@ export async function probe(source: string, extraInputArgs: string[] = [], ffpro
       source,
     ],
     { timeout: 15_000 },
-  );
+  ));
+  } catch (err) {
+    const e = err as { stderr?: string; message?: string; killed?: boolean };
+    if (e.killed) throw new Error('Timed out opening the video source');
+    const last = (e.stderr || e.message || '').trim().split('\n').pop() ?? 'unknown error';
+    // ffprobe prefixes errors with the source path; keep only the reason.
+    throw new Error(`Cannot open video source: ${last.replace(source, '').replace(/^[:\s]+/, '') || 'unknown error'}`);
+  }
   const info = JSON.parse(stdout) as {
     streams?: { width?: number; height?: number; side_data_list?: { rotation?: number }[] }[];
     format?: { duration?: string };
