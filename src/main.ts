@@ -41,6 +41,8 @@ async function runApi(cfg: AppConfig): Promise<void> {
     await db.end();
   });
   await app.listen({ host: cfg.HOST, port: cfg.PORT });
+  const { appVersion } = await import('./api/server.js');
+  logger('api').info(`Safe Savannah v${await appVersion()} — staff: http://${cfg.HOST}:${cfg.PORT}/  ·  tourists: http://${cfg.HOST}:${cfg.PORT}/t`);
   if (hook) await hook.listen({ host: cfg.WEBHOOK_HOST, port: cfg.WEBHOOK_PORT! });
 }
 

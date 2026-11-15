@@ -56,6 +56,28 @@ and zone outlines are illustrative.**
 Demo phone numbers are made up. The app **never** sends to demo people through a **live** Africa's Talking
 account; in the sandbox they're useful for the simulator.
 
+### If the page looks plain or shows old text
+
+An unstyled page, or the old wording *"Duty dashboard. Sign in with your operator ID and PIN"*, means the server is
+running **old code**. Usually that's a server started before you pulled, or a stale `dist/` build. Stop it, then:
+
+```bash
+git pull
+```
+
+```bash
+npm install
+```
+
+```bash
+npm run dev
+```
+
+`npm start` now rebuilds before it starts, so `dist/` can't go stale. The server also refuses to start if its
+stylesheet is missing. Check what is running at http://127.0.0.1:8080/healthz (it reports the version), and look
+for the `Safe Savannah v… — staff: … · tourists: …` line in the log. After pulling, run `npm run seed` once to
+load the demo data.
+
 ## Africa's Talking
 
 | Channel | What it does | How it runs here |

@@ -43,58 +43,48 @@ ${body}
 </html>`;
 }
 
-const landscape = `<svg class="login-art" viewBox="0 0 480 260" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMax meet">
-  <circle cx="352" cy="118" r="34" fill="#e2a33b" opacity=".9"/>
-  <path d="M0 196 C 80 176 150 184 230 172 S 380 160 480 176 V260 H0Z" fill="#24543f"/>
-  <path d="M0 220 C 110 204 210 214 300 204 S 420 196 480 206 V260 H0Z" fill="#1c4433"/>
-  <g fill="#0f2a1f">
-    <path d="M118 176 l3 -44 h4 l3 44z"/>
-    <path d="M123 136 c -10 -6 -26 -8 -40 -6 c 10 -10 30 -16 46 -12 c 14 -6 34 -6 48 2 c -14 0 -30 4 -40 12z"/>
-    <path d="M70 128 c 22 -14 92 -16 116 -2 c -10 6 -96 8 -116 2z"/>
-    <path d="M396 186 l2 -24 h3 l2 24z"/>
-    <path d="M374 162 c 12 -8 46 -8 58 0 c -8 4 -50 4 -58 0z"/>
-  </g>
-  <g fill="#0f2a1f" opacity=".85">
-    <path d="M250 190 c 0 -14 8 -24 22 -26 c 8 -6 22 -6 30 2 c 8 2 12 10 12 18 l -2 18 h-6 l -1 -12 h-4 l -1 12 h-6 l -1 -10 h-18 l -2 10 h-6 l -1 -12 c -4 2 -6 6 -6 10 c -4 -2 -6 -6 -6 -10z"/>
-    <path d="M316 176 c 6 2 8 10 6 16 c -1 4 -3 6 -6 6 c 2 -6 2 -12 0 -16z"/>
-  </g>
-</svg>`;
-
 export function loginPage({ error, operatorId = '' }: { error: string | null; operatorId?: string }): string {
   return layout(
     'Sign in · Safe Savannah',
     `<main class="login">
+  <img class="login-scene" src="/static/img/savanna.svg" alt="" aria-hidden="true">
+  <div class="login-scrim" aria-hidden="true"></div>
   <section class="login-brand" aria-labelledby="brand-title">
-    <div class="login-brand-inner">
-      <p class="brand-mark">${icon('logo', 'logo')}<span>Safe Savannah</span></p>
-      <h1 id="brand-title">Wildlife monitoring &amp; tourist safety</h1>
-      <p class="lede">AI camera alerts, geofenced safety zones and tourist SOS for Tanzania's parks and lodges — alongside, never instead of, your radio procedure.</p>
-      <ul class="login-points">
-        <li>${icon('cpu')} Camera detections scored by species, distance and who is nearby</li>
-        <li>${icon('incident')} Tourist SOS by app, USSD or voice call</li>
-        <li>${icon('sms')} Ranger and tourist alerts via Africa's Talking</li>
-      </ul>
-    </div>
-    ${landscape}
+    <p class="brand-mark">${icon('logo', 'logo')}<span>Safe Savannah <em>AI</em></span></p>
+    <p class="eyebrow">Tanzania · National parks &amp; safari lodges</p>
+    <h1 id="brand-title">See wildlife risk early.<br>Respond together.</h1>
+    <p class="lede">AI camera alerts, geofenced safety zones and tourist SOS in one place — working alongside, never instead of, your radio procedure.</p>
+    <ul class="login-points">
+      <li>${icon('cpu')}<span><strong>Smart detection</strong>Risk scored by species, distance and who is nearby</span></li>
+      <li>${icon('siren')}<span><strong>Tourist SOS</strong>From the app, a basic phone (USSD) or a call</span></li>
+      <li>${icon('sms')}<span><strong>Africa&rsquo;s Talking</strong>SMS and voice alerts to rangers and guests</span></li>
+    </ul>
   </section>
   <section class="login-panel">
     <form method="post" action="/login" class="login-card" novalidate data-login>
-      <h2>Staff sign in</h2>
-      <p class="muted">Rangers and administrators: use the ID and PIN issued by your park admin.</p>
+      <div class="login-card-head">
+        <span class="login-badge">${icon('shield', 'icon icon-sm')} Staff</span>
+        <h2>Welcome back</h2>
+        <p class="muted">Rangers and administrators sign in with the ID and PIN from your park admin.</p>
+      </div>
       ${error ? `<div class="alert alert-error" role="alert" id="login-error">${icon('alert')}<span>${esc(error)}</span></div>` : ''}
       <div class="field">
-        <label for="operatorId">Operator ID</label>
-        <input id="operatorId" name="operatorId" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${esc(operatorId)}" ${error ? 'aria-describedby="login-error"' : ''} ${operatorId ? '' : 'autofocus'}>
+        <label for="operatorId">Staff ID</label>
+        <div class="input-icon">${icon('user')}<input id="operatorId" name="operatorId" autocomplete="username" autocapitalize="none" spellcheck="false" required value="${esc(operatorId)}" ${error ? 'aria-describedby="login-error"' : ''} ${operatorId ? '' : 'autofocus'}></div>
       </div>
       <div class="field">
         <label for="pin">PIN</label>
-        <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required ${operatorId ? 'autofocus' : ''}>
-        <p class="hint">4–12 digits. Ask an admin if you have forgotten it.</p>
+        <div class="input-icon">${icon('key')}<input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required ${operatorId ? 'autofocus' : ''}></div>
+        <p class="hint">4–12 digits. Forgotten it? Ask an admin to reset it.</p>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">${icon('login')}<span>Sign in</span></button>
-      <p class="login-alt">Travelling? <a href="/t">Open the tourist safety app</a></p>
-      <p class="login-foot muted small">${icon('shield', 'icon icon-sm')} Sessions end after a shift or when an admin resets your PIN.</p>
+      <button type="submit" class="btn btn-primary btn-lg btn-block">${icon('login')}<span>Sign in</span></button>
+      <a class="traveller-link" href="/t">
+        <span class="traveller-icon">${icon('globe')}</span>
+        <span><strong>Travelling with us?</strong><small>Open the traveller safety app — alerts, SOS and guidance in English &amp; Kiswahili</small></span>
+        ${icon('chevron-right')}
+      </a>
     </form>
+    <p class="login-foot">${icon('shield', 'icon icon-sm')} Sessions end after a shift or when an admin resets your PIN.</p>
   </section>
 </main>
 <script type="module" src="/static/js/login.js"></script>`,

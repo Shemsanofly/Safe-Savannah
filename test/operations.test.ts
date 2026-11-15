@@ -101,7 +101,8 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
     expect(res.body).not.toMatch(/<script>(?!\s*<\/script>)/);
     expect(res.body).not.toContain('super-secret-api-key');
     const login = await app.inject({ method: 'GET', url: '/login' });
-    expect(login.body).toContain('Operator ID');
+    expect(login.body).toContain('Staff ID');
+    expect(login.body).toContain('/static/css/app.css');
   });
 
   it('overview reports counts, camera state and SMS mode', async () => {

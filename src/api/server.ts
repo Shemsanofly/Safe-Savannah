@@ -62,11 +62,24 @@ async function publicDir(): Promise<string> {
   throw new Error('public/ directory not found');
 }
 
-async function leafletDir(): Promise<string> {
-  for (const c of [path.resolve(here, '../../node_modules/leaflet/dist'), path.resolve(here, '../../../node_modules/leaflet/dist')]) {
+/** Locate an installed package directory both from src/ (tsx) and dist/src/ (compiled). */
+async function vendorDir(rel: string): Promise<string> {
+  for (const c of [path.resolve(here, '../../node_modules', rel), path.resolve(here, '../../../node_modules', rel)]) {
     if (await stat(c).then(() => true, () => false)) return c;
   }
-  throw new Error('leaflet is not installed (npm install)');
+  throw new Error(`${rel} is not installed — run "npm install"`);
+}
+
+/** Version of the app being served (package.json), shown in /healthz and the startup log. */
+export async function appVersion(): Promise<string> {
+  for (const c of [path.resolve(here, '../../package.json'), path.resolve(here, '../../../package.json')]) {
+    try {
+      return (JSON.parse(await readFile(c, 'utf8')) as { version: string }).version;
+    } catch {
+      /* try next */
+    }
+  }
+  return 'unknown';
 }
 
 function tokenMatches(given: unknown, expected: string | undefined): boolean {
@@ -207,7 +220,16 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
   await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 10 } });
   await app.register(fastifyStatic, { root: await publicDir(), prefix: '/static/', decorateReply: false, maxAge: 0, etag: true });
   // Leaflet is served locally (no CDN) so maps work on an offline lodge network; only tiles need internet.
-  await app.register(fastifyStatic, { root: await leafletDir(), prefix: '/static/vendor/leaflet/', decorateReply: false, maxAge: 86_400_000 });
+  await app.register(fastifyStatic, { root: await vendorDir('leaflet/dist'), prefix: '/static/vendor/leaflet/', decorateReply: false, maxAge: 86_400_000 });
+  // Self-hosted typefaces (SIL Open Font License) — no font CDN, works offline.
+  await app.register(fastifyStatic, { root: await vendorDir('@fontsource-variable/inter/files'), prefix: '/static/vendor/fonts/inter/', decorateReply: false, maxAge: 604_800_000 });
+  await app.register(fastifyStatic, { root: await vendorDir('@fontsource-variable/fraunces/files'), prefix: '/static/vendor/fonts/fraunces/', decorateReply: false, maxAge: 604_800_000 });
+  // Refuse to start with a public/ folder that does not match this server (e.g. a stale build).
+  const css = path.join(await publicDir(), 'css', 'app.css');
+  if (!(await stat(css).then((x) => x.isFile(), () => false))) {
+    throw new Error(`Stylesheet ${css} is missing: the server code and public/ folder are out of sync. Run "npm run build" (or "npm run dev").`);
+  }
+  const version = await appVersion();
   app.decorateRequest('operator', null);
 
   let zones: ZoneConfig[] = [];
@@ -265,7 +287,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     }
   };
 
-  app.get('/healthz', async () => ({ ok: true }));
+  app.get('/healthz', async () => ({ ok: true, version }));
 
   app.get('/login', async (req, reply) => {
     if (req.operator) return reply.redirect('/');
