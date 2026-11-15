@@ -15,7 +15,7 @@ export const SMS_GROUPS = {
 export type SmsGroup = keyof typeof SMS_GROUPS | 'none';
 
 const STATUSES = ['open', 'acknowledged', 'closed', 'false_alert'] as const;
-const SOURCES = ['inference', 'simulated', 'synthetic'] as const;
+const SOURCES = ['inference', 'simulated', 'synthetic', 'report'] as const;
 const csv = <T extends string>(allowed: readonly T[]) =>
   z
     .string()
@@ -42,6 +42,9 @@ export const IncidentFiltersSchema = z.object({
     .transform((v) => (v === 'active' ? 'open,acknowledged' : v))
     .pipe(csv(STATUSES)),
   source: csv(SOURCES),
+  kind: csv(['zone_alert', 'wildlife', 'sos'] as const),
+  risk: csv(['low', 'medium', 'high', 'critical'] as const),
+  area: z.string().max(40).optional(),
   zone: z.string().max(64).optional(),
   sms: z.enum(['queued', 'accepted', 'delivered', 'problem', 'not_sent', 'none']).optional(),
   owner: z.string().max(32).optional(),
@@ -70,7 +73,10 @@ export function buildIncidentWhere(f: IncidentFilters, opts: { timeZone: string;
   const clauses: string[] = [];
   if (f.status?.length) clauses.push(`e.status = ANY(${p(f.status)}::event_status[])`);
   if (f.source?.length) clauses.push(`e.source = ANY(${p(f.source)}::text[])`);
-  if (f.zone) clauses.push(`e.zone_id = ${p(f.zone)}`);
+  if (f.kind?.length) clauses.push(`e.kind = ANY(${p(f.kind)}::text[])`);
+  if (f.risk?.length) clauses.push(`e.risk_level = ANY(${p(f.risk)}::text[])`);
+  if (f.area) clauses.push(`e.area_id = ${p(f.area)}`);
+  if (f.zone) clauses.push(`(e.zone_id = ${p(f.zone)} OR e.safety_zone_id::text = ${p(f.zone)})`);
   if (f.owner) clauses.push(`e.acknowledged_by = ${p(f.owner === 'me' ? opts.me : f.owner)}`);
   if (f.from) clauses.push(`e.opened_at >= (${p(f.from)}::date)::timestamp AT TIME ZONE ${p(opts.timeZone)}`);
   if (f.to) clauses.push(`e.opened_at < ((${p(f.to)}::date + 1)::timestamp AT TIME ZONE ${p(opts.timeZone)})`);
@@ -83,6 +89,10 @@ export function buildIncidentWhere(f: IncidentFilters, opts: { timeZone: string;
     const like = p(`%${f.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     const parts = [
       `e.zone_label ILIKE ${like}`,
+      `e.title ILIKE ${like}`,
+      `e.description ILIKE ${like}`,
+      `e.reporter_phone ILIKE ${like}`,
+      `e.class_label ILIKE ${like}`,
       `e.zone_id ILIKE ${like}`,
       `e.close_reason ILIKE ${like}`,
       `e.acknowledged_by ILIKE ${like}`,
@@ -107,6 +117,14 @@ const SORT_SQL: Record<IncidentFilters['sort'], string> = {
 
 export interface IncidentListItem {
   id: number;
+  kind: string;
+  risk_level: string | null;
+  title: string | null;
+  area_id: string | null;
+  area_name: string | null;
+  emergency_type: string | null;
+  report_channel: string | null;
+  demo: boolean;
   zone_id: string;
   zone_label: string;
   class_label: string;
@@ -130,7 +148,8 @@ export interface IncidentListItem {
 }
 
 const LIST_SELECT = `
-  SELECT e.id, e.zone_id, e.zone_label, e.class_label, e.confidence, e.status, e.source, e.first_seen_at, e.opened_at,
+  SELECT e.id, e.kind, e.risk_level, e.title, e.area_id, ar.name AS area_name, e.emergency_type, e.report_channel, e.tourist_id, e.demo,
+         e.lat, e.lng, e.zone_id, e.zone_label, e.class_label, e.confidence, e.status, e.source, e.first_seen_at, e.opened_at,
          e.last_seen_at, e.acknowledged_by, ack.name AS acknowledged_by_name, e.acknowledged_at, e.closed_by,
          cl.name AS closed_by_name, e.closed_at, e.close_reason, e.model,
          EXTRACT(EPOCH FROM e.acknowledged_at - e.opened_at)::float8 AS ack_seconds,
@@ -139,7 +158,8 @@ const LIST_SELECT = `
          COALESCE((SELECT array_agg(j.status ORDER BY j.id) FROM notification_jobs j WHERE j.event_id = e.id), '{}') AS sms_statuses
     FROM events e
     LEFT JOIN operators ack ON ack.id = e.acknowledged_by
-    LEFT JOIN operators cl ON cl.id = e.closed_by`;
+    LEFT JOIN operators cl ON cl.id = e.closed_by
+    LEFT JOIN areas ar ON ar.id = e.area_id`;
 
 export async function listIncidents(
   db: Queryable,
@@ -185,13 +205,15 @@ export interface NotificationAttemptRow {
 
 export type TimelineEntry =
   | { at: Date; kind: 'action'; action: string; actor: string; actorName: string | null; channel: string | null; note: string | null }
-  | { at: Date; kind: 'sms_attempt'; recipient: string; outcome: string; detail: string | null; httpStatus: number | null }
-  | { at: Date; kind: 'sms_queued'; recipient: string }
+  | { at: Date; kind: 'sms_attempt'; recipient: string; outcome: string; detail: string | null; httpStatus: number | null; channel: string }
+  | { at: Date; kind: 'sms_queued'; recipient: string; channel: string }
   | { at: Date; kind: 'sms_delivery'; recipient: string; status: string; detail: string | null }
   | { at: Date; kind: 'sms_not_sent'; recipient: string; status: string; detail: string | null };
 
 export interface IncidentDetail {
-  event: EventRow & { acknowledged_by_name: string | null; closed_by_name: string | null };
+  event: EventRow & { acknowledged_by_name: string | null; closed_by_name: string | null; area_name: string | null };
+  tourist: { id: number; name: string; phone: string; group_size: number; lodge: string | null; language: string; nationality: string | null; demo: boolean } | null;
+  detection: Record<string, unknown> | null;
   actions: (EventActionRow & { actor_name: string | null })[];
   notifications: (NotificationJobRow & { attemptLog: NotificationAttemptRow[] })[];
   timeline: TimelineEntry[];
@@ -199,14 +221,15 @@ export interface IncidentDetail {
 
 export async function getIncidentDetail(db: Queryable, id: number): Promise<IncidentDetail | null> {
   const ev = await db.query<IncidentDetail['event']>(
-    `SELECT e.*, ack.name AS acknowledged_by_name, cl.name AS closed_by_name
+    `SELECT e.*, ack.name AS acknowledged_by_name, cl.name AS closed_by_name, ar.name AS area_name
        FROM events e LEFT JOIN operators ack ON ack.id = e.acknowledged_by LEFT JOIN operators cl ON cl.id = e.closed_by
+       LEFT JOIN areas ar ON ar.id = e.area_id
       WHERE e.id = $1`,
     [id],
   );
   const event = ev.rows[0];
   if (!event) return null;
-  const [actions, jobs, attempts] = await Promise.all([
+  const [actions, jobs, attempts, tourist, detection] = await Promise.all([
     db.query<EventActionRow & { actor_name: string | null }>(
       `SELECT a.*, o.name AS actor_name FROM event_actions a LEFT JOIN operators o ON o.id = a.actor
         WHERE a.event_id = $1 ORDER BY a.created_at, a.id`,
@@ -217,6 +240,17 @@ export async function getIncidentDetail(db: Queryable, id: number): Promise<Inci
       `SELECT t.* FROM notification_attempts t JOIN notification_jobs j ON j.id = t.job_id WHERE j.event_id = $1 ORDER BY t.started_at, t.id`,
       [id],
     ),
+    event.tourist_id
+      ? db.query('SELECT id, name, phone, group_size, lodge, language, nationality, demo FROM tourists WHERE id = $1', [event.tourist_id])
+      : Promise.resolve({ rows: [] }),
+    event.detection_id
+      ? db.query(
+          `SELECT d.id, d.species, d.confidence, d.input, d.analysis, d.model, d.distance_m, d.inside_zone, d.risk_level, d.risk_score, d.risk_reasons,
+                  d.captured_at, d.other_detections, (d.image_path IS NOT NULL) AS has_image, z.name AS zone_name, z.sensitivity, z.occupancy, z.buffer_m
+             FROM detections d LEFT JOIN safety_zones z ON z.id = d.safety_zone_id WHERE d.id = $1`,
+          [event.detection_id],
+        )
+      : Promise.resolve({ rows: [] }),
   ]);
   const notifications = jobs.rows.map((j) => ({ ...j, attemptLog: attempts.rows.filter((a) => a.job_id === j.id) }));
   const timeline: TimelineEntry[] = actions.rows.map((a) => ({
@@ -229,9 +263,9 @@ export async function getIncidentDetail(db: Queryable, id: number): Promise<Inci
     note: a.note,
   }));
   for (const j of notifications) {
-    timeline.push({ at: j.created_at, kind: 'sms_queued', recipient: j.recipient_alias });
+    timeline.push({ at: j.created_at, kind: 'sms_queued', recipient: j.recipient_alias, channel: j.channel });
     for (const t of j.attemptLog) {
-      timeline.push({ at: t.finished_at, kind: 'sms_attempt', recipient: j.recipient_alias, outcome: t.outcome, detail: t.detail, httpStatus: t.http_status });
+      timeline.push({ at: t.finished_at, kind: 'sms_attempt', recipient: j.recipient_alias, outcome: t.outcome, detail: t.detail, httpStatus: t.http_status, channel: j.channel });
     }
     if (j.delivered_at) timeline.push({ at: j.delivered_at, kind: 'sms_delivery', recipient: j.recipient_alias, status: 'delivered', detail: j.provider_status });
     else if (j.status === 'delivery_failed') {
@@ -242,7 +276,14 @@ export async function getIncidentDetail(db: Queryable, id: number): Promise<Inci
     }
   }
   timeline.sort((a, b) => a.at.getTime() - b.at.getTime());
-  return { event, actions: actions.rows, notifications, timeline };
+  return {
+    event,
+    actions: actions.rows,
+    notifications,
+    timeline,
+    tourist: (tourist.rows[0] as IncidentDetail['tourist']) ?? null,
+    detection: (detection.rows[0] as Record<string, unknown>) ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------

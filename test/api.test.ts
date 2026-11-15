@@ -42,7 +42,7 @@ describe.skipIf(!available)('HTTP API (PostgreSQL)', () => {
   });
   beforeEach(async () => {
     await truncateAll(db);
-    await upsertOperator(db, { id: 'duty1', name: 'Asha', pin: '4821', role: 'supervisor' });
+    await upsertOperator(db, { id: 'duty1', name: 'Asha', pin: '4821', role: 'admin' });
     const res = await app.inject({ method: 'POST', url: '/login', payload: 'operatorId=duty1&pin=4821', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
     expect(res.statusCode).toBe(302);
     cookie = String(res.headers['set-cookie']).split(';')[0]!;
@@ -122,19 +122,20 @@ describe.skipIf(!available)('HTTP API (PostgreSQL)', () => {
         })
         .then((r) => r.body);
 
-    expect(await ussd('+255799999999', '')).toMatch(/^END .*not authorised/);
-    expect(await ussd('+255711111111', '')).toMatch(/^CON .*1\. Active alerts/s);
-    expect(await ussd('+255711111111', '1')).toMatch(/^END SS-001 Guest path A OPEN/);
+    // Phones that are not rangers get the tourist emergency menu instead.
+    expect(await ussd('+255799999999', '')).toMatch(/^CON Safe Savannah\n1\. Request emergency help/);
+    expect(await ussd('+255711111111', '')).toMatch(/^CON Safe Savannah ranger.*1\. Active alerts/s);
+    expect(await ussd('+255711111111', '1')).toMatch(/^END SS-001 .*PENDING/);
     expect(await ussd('+255711111111', '2')).toMatch(/^CON Enter alert number/);
     expect(await ussd('+255711111111', '2*999')).toBe('END Alert not found.');
-    expect(await ussd('+255711111111', `2*${event.id}`)).toMatch(/^CON SS-001 possible elephant at Guest path A.*1\. Acknowledge as Asha/s);
+    expect(await ussd('+255711111111', `2*${event.id}`)).toMatch(/^CON SS-001 .*1\. I am responding/s);
     expect(await ussd('+255711111111', `2*${event.id}*2`)).toMatch(/^END Cancelled/);
     expect((await db.query('SELECT status FROM events')).rows[0].status).toBe('open');
-    expect(await ussd('+255711111111', `2*${event.id}*1`)).toMatch(/^END SS-001 acknowledged by Asha/);
+    expect(await ussd('+255711111111', `2*${event.id}*1`)).toMatch(/^END SS-001: you are responding, Asha/);
     const e = (await db.query('SELECT status, acknowledged_by FROM events')).rows[0];
     expect(e).toEqual({ status: 'acknowledged', acknowledged_by: 'duty1' });
     expect((await db.query(`SELECT channel FROM event_actions WHERE action = 'acknowledged'`)).rows[0].channel).toBe('ussd');
-    expect(await ussd('+255711111111', `2*${event.id}*1`)).toMatch(/already acknowledged/);
+    expect(await ussd('+255711111111', `2*${event.id}*1`)).toMatch(/already has a responder/);
   });
 
   it('demo uplink control toggles the mock adapter', async () => {

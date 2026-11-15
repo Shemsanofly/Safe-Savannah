@@ -60,7 +60,18 @@ const EnvSchema = z.object({
   /** Dashboard shows the feed as stale (zone status UNKNOWN) after this many seconds without a frame. */
   STALE_FEED_SECONDS: z.coerce.number().positive().default(5),
 
+  /** africastalking = real Africa's Talking API (sandbox or live); mock = labelled simulation, nothing leaves the laptop. */
   SMS_PROVIDER: z.enum(['mock', 'africastalking']).default('mock'),
+  /** Voice: africastalking needs AT_VOICE_NUMBER (a provisioned AT number); otherwise calls are simulated and labelled. */
+  VOICE_PROVIDER: z.enum(['simulated', 'africastalking']).default('simulated'),
+  AT_VOICE_NUMBER: z.string().optional(),
+  /** Public base URL of the webhook listener (used in voice GetDigits callbacks). */
+  PUBLIC_WEBHOOK_URL: z.string().url().optional(),
+  /** Number shown to tourists as the emergency line. Verify with the park/lodge before use. */
+  EMERGENCY_LINE: z.string().default('112'),
+  /** Run the scripted camera simulator that produces labelled SIMULATED detections. */
+  SIMULATOR_ENABLED: bool.default(true),
+  SIMULATOR_INTERVAL_SECONDS: z.coerce.number().int().min(10).default(60),
   /** "alias:+2557XXXXXXXX" — approved duty/test numbers only. */
   SMS_RECIPIENTS: z.string().default('duty:+255700000000'),
   /** Queued SMS whose event was last seen longer ago than this are expired, not sent. */
@@ -93,14 +104,16 @@ export interface AppConfig extends Env {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = EnvSchema.safeParse(env);
+  // An empty KEY= in .env means "not set", not an empty value.
+  const cleaned = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined && v.trim() !== ''));
+  const parsed = EnvSchema.safeParse(cleaned);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n');
     throw new Error(`Invalid configuration:\n${issues}`);
   }
   const cfg = parsed.data;
-  if (cfg.SMS_PROVIDER === 'africastalking' && !cfg.AT_API_KEY) {
-    throw new Error('SMS_PROVIDER=africastalking requires AT_API_KEY');
+  if (cfg.VOICE_PROVIDER === 'africastalking' && (!cfg.AT_API_KEY || !cfg.AT_VOICE_NUMBER)) {
+    throw new Error('VOICE_PROVIDER=africastalking requires AT_API_KEY and AT_VOICE_NUMBER');
   }
   if (cfg.USSD_ENABLED && !cfg.WEBHOOK_TOKEN) {
     throw new Error('USSD_ENABLED=true requires WEBHOOK_TOKEN');

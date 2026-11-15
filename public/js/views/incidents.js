@@ -1,24 +1,24 @@
 // Incidents: search, filter, sort and page through current and historical incidents.
 import { api, BOOT, clear, debounce, el, fmtDateTime, fmtDuration, icon, qs, toast } from '../lib.js';
-import { INCIDENT, SMS, incidentBadge, smsBadge, sourceBadge, summarizeSms } from '../status.js';
+import { INCIDENT, SMS, demoBadge, incidentBadge, kindBadge, riskBadge, smsBadge, sourceBadge, summarizeSms } from '../status.js';
 
 const STATUS_TABS = [
   { value: '', label: 'All' },
   { value: 'active', label: 'Active' },
-  { value: 'open', label: 'Needs acknowledgement' },
-  { value: 'acknowledged', label: 'Acknowledged' },
-  { value: 'closed', label: 'Closed' },
-  { value: 'false_alert', label: 'False alerts' },
+  { value: 'open', label: 'Pending' },
+  { value: 'acknowledged', label: 'Responding' },
+  { value: 'closed', label: 'Resolved' },
+  { value: 'false_alert', label: 'False alarms' },
 ];
 const SORTS = [
   { value: 'opened_at:desc', label: 'Newest first' },
   { value: 'opened_at:asc', label: 'Oldest first' },
   { value: 'last_seen_at:desc', label: 'Most recently seen' },
   { value: 'confidence:desc', label: 'Highest confidence' },
-  { value: 'ack_seconds:desc', label: 'Slowest acknowledgement' },
-  { value: 'ack_seconds:asc', label: 'Fastest acknowledgement' },
+  { value: 'ack_seconds:desc', label: 'Slowest response' },
+  { value: 'ack_seconds:asc', label: 'Fastest response' },
 ];
-const FILTER_KEYS = ['q', 'status', 'source', 'zone', 'sms', 'owner', 'from', 'to', 'sort', 'order', 'page', 'pageSize'];
+const FILTER_KEYS = ['q', 'kind', 'risk', 'area', 'status', 'source', 'zone', 'sms', 'owner', 'from', 'to', 'sort', 'order', 'page', 'pageSize'];
 
 export function mount(main, ctx) {
   let params = pick(ctx.params);
@@ -26,9 +26,12 @@ export function mount(main, ctx) {
   let zonesLoaded = false;
 
   // ---------- controls (built once; never re-rendered by refreshes) ----------
-  const search = el('input', { type: 'search', id: 'f-q', placeholder: 'SS-014, zone, officer, or note text', autocomplete: 'off', value: params.q || '' });
+  const search = el('input', { type: 'search', id: 'f-q', placeholder: 'SS-014, place, species, ranger, tourist phone or note', autocomplete: 'off', value: params.q || '' });
   const statusSeg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Incident status' });
-  const source = select('f-source', [['', 'Any source'], ['inference', 'Real detection'], ['simulated', 'Simulated'], ['synthetic', 'Test data'], ['simulated,synthetic', 'Simulated or test']], params.source);
+  const source = select('f-source', [['', 'Any source'], ['inference', 'Real AI model'], ['simulated', 'Simulated AI'], ['report', 'Human report (SOS)'], ['synthetic', 'Test data'], ['simulated,synthetic', 'Simulated or test']], params.source);
+  const risk = select('f-risk', [['', 'Any risk'], ['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['high,critical', 'High or critical']], params.risk);
+  const areaSel = select('f-area', [['', 'All areas']], params.area);
+  const kindSeg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Incident type' });
   const zone = select('f-zone', [['', 'Any zone']], params.zone);
   const sms = select('f-sms', [['', 'Any SMS state'], ['queued', 'Queued or retrying'], ['accepted', 'Accepted by provider'], ['delivered', 'Delivered'], ['problem', 'Needs attention'], ['not_sent', 'Not sent (expired/closed)'], ['none', 'No SMS job']], params.sms);
   const owner = select('f-owner', [['', 'Anyone'], ['me', 'Acknowledged by me']], params.owner);
@@ -44,8 +47,10 @@ export function mount(main, ctx) {
   const moreFilters = el('details', { class: 'more-filters', open: window.matchMedia('(min-width: 721px)').matches || undefined },
     moreSummary,
     el('div', { class: 'filters-row' },
-      field('f-source', 'Detection source', source),
-      field('f-zone', 'Zone', zone),
+      field('f-area', 'Area', areaSel),
+      field('f-risk', 'Risk', risk),
+      field('f-source', 'Source', source),
+      field('f-zone', 'Gate camera zone', zone),
       field('f-sms', 'SMS', sms),
       field('f-owner', 'Owner', owner),
       field('f-from', 'Opened from', from),
@@ -69,13 +74,25 @@ export function mount(main, ctx) {
       el('div', { class: 'filters-row' },
         el('div', { class: 'field grow' }, el('label', { for: 'f-q' }, 'Search'), el('div', { class: 'input-icon' }, icon('search'), search)),
         field('f-sort', 'Sort', sort)),
-      el('div', { class: 'filters-row' }, statusSeg),
+      el('div', { class: 'filters-row' }, kindSeg, statusSeg),
       moreFilters,
       dateError,
       el('p', { class: 'hint' }, `Dates are in lodge time (${BOOT.timeZone}) and include the whole day.`)),
     resultBar, loadingLine, results, el('div', { class: 'row between' }, pageSize, pager),
   );
   pageSize.setAttribute('aria-label', 'Results per page');
+
+  function renderKindSeg() {
+    clear(kindSeg, [['', 'All types'], ['sos', 'SOS'], ['wildlife', 'Wildlife'], ['zone_alert', 'Gate camera']].map(([v, l]) =>
+      el('button', { type: 'button', 'aria-pressed': String((params.kind || '') === v), onclick: () => setParams({ kind: v, page: '' }) }, l)));
+  }
+  renderKindSeg();
+  api.get('/api/areas').then(({ areas }) => {
+    for (const a of areas) areaSel.append(el('option', { value: a.id }, a.name));
+    areaSel.value = params.area || '';
+  }).catch(() => undefined);
+  risk.addEventListener('change', () => setParams({ risk: risk.value, page: '' }));
+  areaSel.addEventListener('change', () => setParams({ area: areaSel.value, page: '' }));
 
   function renderStatusSeg() {
     clear(statusSeg, STATUS_TABS.map((t) =>
@@ -97,7 +114,7 @@ export function mount(main, ctx) {
   pageSize.addEventListener('change', () => setParams({ pageSize: pageSize.value, page: '' }));
   reset.addEventListener('click', () => {
     search.value = '';
-    for (const s of [source, zone, sms, owner]) s.value = '';
+    for (const s of [source, zone, sms, owner, risk, areaSel]) s.value = '';
     from.value = '';
     to.value = '';
     sort.value = 'opened_at:desc';
@@ -156,7 +173,7 @@ export function mount(main, ctx) {
     const first = data.total === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
     const last = Math.min(data.total, data.page * data.pageSize);
     const active = activeFilterCount();
-    const hidden = ['source', 'zone', 'sms', 'owner', 'from', 'to'].filter((k) => params[k]).length;
+    const hidden = ['area', 'risk', 'source', 'zone', 'sms', 'owner', 'from', 'to'].filter((k) => params[k]).length;
     moreSummary.lastChild.textContent = hidden ? `More filters (${hidden} active)` : 'More filters';
     clear(resultBar,
       el('p', { class: 'strong' }, data.total === 0 ? 'No incidents' : `Showing ${first}–${last} of ${data.total} incident${data.total === 1 ? '' : 's'}`),
@@ -181,12 +198,14 @@ export function mount(main, ctx) {
       const tr = el('tr', { class: `is-row-link is-${i.status}` },
         el('td', { 'data-label': 'Incident' }, el('div', { class: 'cell-stack' },
           el('a', { href: `#/incidents/${i.id}`, class: 'strong' }, i.ref),
-          el('span', { class: 'muted small' }, i.zone_label))),
+          el('span', { class: 'small' }, i.title || i.zone_label || ''),
+          el('span', { class: 'muted small' }, i.area_name || ''))),
+        el('td', { 'data-label': 'Type' }, el('div', { class: 'cell-stack' }, kindBadge(i.kind), riskBadge(i.risk_level), i.demo ? demoBadge() : null)),
         el('td', { 'data-label': 'Status' }, incidentBadge(i.status)),
         el('td', { 'data-label': 'Opened' }, el('div', { class: 'cell-stack' }, fmtDateTime(i.opened_at),
-          el('span', { class: 'muted small' }, `Peak ${Math.round(i.confidence * 100)}% ${i.class_label}`))),
-        el('td', { 'data-label': 'Time to acknowledge', class: 'num' }, i.ack_seconds === null ? el('span', { class: 'muted' }, i.status === 'open' ? 'waiting' : '—') : fmtDuration(i.ack_seconds)),
-        el('td', { 'data-label': 'Owner' }, i.acknowledged_by_name || i.acknowledged_by || el('span', { class: 'muted' }, 'nobody yet'),
+          i.class_label ? el('span', { class: 'muted small' }, `Peak ${Math.round((i.confidence || 0) * 100)}% ${i.class_label}`) : i.report_channel ? el('span', { class: 'muted small' }, `via ${i.report_channel.toUpperCase()}`) : null)),
+        el('td', { 'data-label': 'Time to respond', class: 'num' }, i.ack_seconds === null ? el('span', { class: 'muted' }, i.status === 'open' ? 'waiting' : '—') : fmtDuration(i.ack_seconds)),
+        el('td', { 'data-label': 'Responder' }, i.acknowledged_by_name || i.acknowledged_by || el('span', { class: 'muted' }, 'nobody yet'),
           i.handoff_count ? el('div', { class: 'muted small' }, `${i.handoff_count} handoff${i.handoff_count === 1 ? '' : 's'}`) : null),
         el('td', { 'data-label': 'SMS' }, smsStatus ? el('span', { title: SMS[smsStatus]?.explain }, smsBadge(smsStatus)) : el('span', { class: 'muted' }, 'none')),
         el('td', { 'data-label': 'Source' }, sourceBadge(i.source)));
@@ -199,8 +218,8 @@ export function mount(main, ctx) {
     });
     clear(results, el('div', { class: 'table-wrap' }, el('table', { class: 'data table-cards' },
       el('caption', { class: 'sr-only' }, 'Incidents matching the filters'),
-      el('thead', {}, el('tr', {}, ['Incident', 'Status', 'Opened', 'Time to acknowledge', 'Owner', 'SMS', 'Source'].map((h) =>
-        el('th', { scope: 'col', class: h === 'Time to acknowledge' ? 'num' : null }, h)))),
+      el('thead', {}, el('tr', {}, ['Incident', 'Type', 'Status', 'Opened', 'Time to respond', 'Responder', 'SMS', 'Source'].map((h) =>
+        el('th', { scope: 'col', class: h === 'Time to respond' ? 'num' : null }, h)))),
       el('tbody', {}, rows))));
 
     clear(pager,
@@ -210,7 +229,7 @@ export function mount(main, ctx) {
   }
 
   function activeFilterCount() {
-    return ['q', 'status', 'source', 'zone', 'sms', 'owner', 'from', 'to'].filter((k) => params[k]).length;
+    return ['q', 'kind', 'risk', 'area', 'status', 'source', 'zone', 'sms', 'owner', 'from', 'to'].filter((k) => params[k]).length;
   }
 
   if (exportBtn) {
@@ -233,6 +252,7 @@ export function mount(main, ctx) {
       params = pick(p);
       if (search !== document.activeElement) search.value = params.q || '';
       renderStatusSeg();
+      renderKindSeg();
       load();
     },
     destroy() {

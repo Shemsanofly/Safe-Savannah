@@ -71,8 +71,8 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
   });
   beforeEach(async () => {
     await truncateAll(db);
-    await upsertOperator(db, { id: 'sup', name: 'Sara Supervisor', pin: '1111', role: 'supervisor' });
-    await upsertOperator(db, { id: 'off', name: 'Omar Officer', pin: '2222', role: 'officer' });
+    await upsertOperator(db, { id: 'sup', name: 'Sara Supervisor', pin: '1111', role: 'admin' });
+    await upsertOperator(db, { id: 'off', name: 'Omar Officer', pin: '2222', role: 'ranger' });
     cookies.sup = await login('sup', '1111');
     cookies.off = await login('off', '2222');
   });
@@ -223,23 +223,23 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
 
   it('operator management: supervisor-only, validated, and guarded against lock-out', async () => {
     expect((await req('off', 'GET', '/api/operators')).statusCode).toBe(403);
-    expect((await req('off', 'POST', '/api/operators', { id: 'x1', name: 'X', pin: '1234', role: 'supervisor' })).statusCode).toBe(403);
+    expect((await req('off', 'POST', '/api/operators', { id: 'x1', name: 'X', pin: '1234', role: 'admin' })).statusCode).toBe(403);
 
-    const created = await req('sup', 'POST', '/api/operators', { id: 'new1', name: 'New Officer', pin: '5555', role: 'officer' });
+    const created = await req('sup', 'POST', '/api/operators', { id: 'new1', name: 'New Officer', pin: '5555', role: 'ranger' });
     expect(created.statusCode).toBe(201);
     expect(created.json().operator).not.toHaveProperty('pin_hash');
-    expect((await req('sup', 'POST', '/api/operators', { id: 'new1', name: 'Dup', pin: '5555', role: 'officer' })).statusCode).toBe(409);
-    expect((await req('sup', 'POST', '/api/operators', { id: 'bad id!', name: 'Bad', pin: '5555', role: 'officer' })).statusCode).toBe(400);
-    expect((await req('sup', 'POST', '/api/operators', { id: 'new2', name: 'Weak', pin: '12', role: 'officer' })).statusCode).toBe(400);
-    expect((await req('sup', 'POST', '/api/operators', { id: 'new3', name: 'Role', pin: '1234', role: 'admin' })).statusCode).toBe(400);
+    expect((await req('sup', 'POST', '/api/operators', { id: 'new1', name: 'Dup', pin: '5555', role: 'ranger' })).statusCode).toBe(409);
+    expect((await req('sup', 'POST', '/api/operators', { id: 'bad id!', name: 'Bad', pin: '5555', role: 'ranger' })).statusCode).toBe(400);
+    expect((await req('sup', 'POST', '/api/operators', { id: 'new2', name: 'Weak', pin: '12', role: 'ranger' })).statusCode).toBe(400);
+    expect((await req('sup', 'POST', '/api/operators', { id: 'new3', name: 'Role', pin: '1234', role: 'superuser' })).statusCode).toBe(400);
 
     // Cannot demote or deactivate yourself, nor remove the last supervisor.
     expect((await req('sup', 'PATCH', '/api/operators/sup', { active: false })).json().error).toBe('self_lockout');
-    expect((await req('sup', 'PATCH', '/api/operators/sup', { role: 'officer' })).json().error).toBe('self_lockout');
-    await upsertOperator(db, { id: 'sup2', name: 'Second Sup', pin: '3333', role: 'supervisor' });
+    expect((await req('sup', 'PATCH', '/api/operators/sup', { role: 'ranger' })).json().error).toBe('self_lockout');
+    await upsertOperator(db, { id: 'sup2', name: 'Second Sup', pin: '3333', role: 'admin' });
     cookies.sup2 = await login('sup2', '3333');
-    expect((await req('sup2', 'PATCH', '/api/operators/sup', { role: 'officer' })).statusCode).toBe(200);
-    expect((await req('sup2', 'PATCH', '/api/operators/sup', { role: 'supervisor' })).statusCode).toBe(200);
+    expect((await req('sup2', 'PATCH', '/api/operators/sup', { role: 'ranger' })).statusCode).toBe(200);
+    expect((await req('sup2', 'PATCH', '/api/operators/sup', { role: 'admin' })).statusCode).toBe(200);
     // A role change signs the person out so their new permissions apply immediately.
     expect((await req('sup', 'GET', '/api/me')).statusCode).toBe(401);
     cookies.sup = await login('sup', '1111');
@@ -257,7 +257,7 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
     const bad = await app.inject({ method: 'POST', url: '/login', payload: 'operatorId=off&pin=2222', headers: { 'content-type': 'application/x-www-form-urlencoded' } });
     expect(bad.statusCode).toBe(401);
     cookies.off = await login('off', '9876');
-    expect((await req('off', 'GET', '/api/me')).json()).toMatchObject({ operator: { id: 'off', role: 'officer' }, permissions: { canExport: false } });
+    expect((await req('off', 'GET', '/api/me')).json()).toMatchObject({ operator: { id: 'off', role: 'ranger' }, permissions: { canExport: false } });
     expect((await req('sup', 'POST', '/api/operators/off/pin', { pin: 'abcd' })).statusCode).toBe(400);
   });
 

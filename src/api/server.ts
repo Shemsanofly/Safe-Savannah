@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
+import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -42,6 +43,8 @@ import { cameraFeedState, parseDetector } from './cameraState.js';
 import { toCsv } from './csv.js';
 import { appPage, loginPage } from './pages.js';
 import { handleUssd } from './ussd.js';
+import { registerPlatformRoutes, voiceCallbackUrl } from './platformRoutes.js';
+import { handleVoice } from './voiceWebhook.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_COOKIE = 'ss_session';
@@ -57,6 +60,13 @@ async function publicDir(): Promise<string> {
     if (await stat(c).then(() => true, () => false)) return c;
   }
   throw new Error('public/ directory not found');
+}
+
+async function leafletDir(): Promise<string> {
+  for (const c of [path.resolve(here, '../../node_modules/leaflet/dist'), path.resolve(here, '../../../node_modules/leaflet/dist')]) {
+    if (await stat(c).then(() => true, () => false)) return c;
+  }
+  throw new Error('leaflet is not installed (npm install)');
 }
 
 function tokenMatches(given: unknown, expected: string | undefined): boolean {
@@ -105,12 +115,14 @@ export function describeSource(source: string): string {
 }
 
 export function permissions(op: Operator, cfg: AppConfig) {
-  const supervisor = op.role === 'supervisor';
+  const admin = op.role === 'admin';
   return {
-    canExport: supervisor,
-    canManageOperators: supervisor,
-    canViewTechnical: supervisor,
-    canUseDemoControls: supervisor && cfg.DEMO_CONTROLS && cfg.SMS_PROVIDER === 'mock',
+    canExport: admin,
+    canManageOperators: admin,
+    canViewTechnical: admin,
+    canUseDemoControls: admin && cfg.DEMO_CONTROLS && cfg.SMS_PROVIDER === 'mock',
+    canRunSimulations: admin && cfg.SIMULATOR_ENABLED,
+    canManageZones: admin,
   };
 }
 
@@ -151,6 +163,20 @@ async function registerWebhooks(app: FastifyInstance, cfg: AppConfig, db: Db): P
     const text = await handleUssd(db, cfg, body.data);
     return reply.type('text/plain').send(text);
   });
+
+  // Africa's Talking voice: outbound alert scripts and the inbound emergency keypad menu.
+  app.post('/webhooks/voice', { preHandler: guard }, async (req, reply) => {
+    const body = z
+      .object({
+        sessionId: z.string().optional(), isActive: z.string().optional(), direction: z.string().optional(),
+        callerNumber: z.string().optional(), destinationNumber: z.string().optional(), dtmfDigits: z.string().optional(),
+      })
+      .passthrough()
+      .safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send('');
+    const xml = await handleVoice(db, cfg, body.data, { callbackUrl: voiceCallbackUrl(cfg) });
+    return reply.type('application/xml').send(xml);
+  });
 }
 
 export async function buildWebhookApp(cfg: AppConfig, db: Db): Promise<FastifyInstance> {
@@ -162,7 +188,8 @@ export async function buildWebhookApp(cfg: AppConfig, db: Db): Promise<FastifyIn
 
 const CSP = [
   "default-src 'self'",
-  "img-src 'self' data: blob:",
+  // Map tiles come from OpenStreetMap; everything else is same-origin.
+  "img-src 'self' data: blob: https://tile.openstreetmap.org",
   "style-src 'self'",
   "script-src 'self'",
   "connect-src 'self'",
@@ -177,7 +204,10 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
   const app = Fastify({ logger: opts.logger === false ? false : { level: cfg.LOG_LEVEL } });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
   await app.register(formbody);
+  await app.register(multipart, { limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 10 } });
   await app.register(fastifyStatic, { root: await publicDir(), prefix: '/static/', decorateReply: false, maxAge: 0, etag: true });
+  // Leaflet is served locally (no CDN) so maps work on an offline lodge network; only tiles need internet.
+  await app.register(fastifyStatic, { root: await leafletDir(), prefix: '/static/vendor/leaflet/', decorateReply: false, maxAge: 86_400_000 });
   app.decorateRequest('operator', null);
 
   let zones: ZoneConfig[] = [];
@@ -189,7 +219,8 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
 
   app.addHook('onSend', async (req, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
-    reply.header('Referrer-Policy', 'no-referrer');
+    // OpenStreetMap's tile policy requires a Referer; send only our origin.
+    reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     reply.header('X-Frame-Options', 'DENY');
     const type = String(reply.getHeader('content-type') ?? '');
     if (type.startsWith('text/html')) reply.header('Content-Security-Policy', CSP);
@@ -227,10 +258,10 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     if (req.url.startsWith('/api/')) return reply.code(401).send({ error: 'unauthorized', message: 'Your session has ended. Please sign in again.' });
     return reply.redirect('/login');
   };
-  const requireSupervisor = async (req: FastifyRequest, reply: FastifyReply) => {
+  const requireAdmin = async (req: FastifyRequest, reply: FastifyReply) => {
     if (!req.operator) return requireOperator(req, reply);
-    if (req.operator.role !== 'supervisor') {
-      return reply.code(403).send({ error: 'forbidden', message: 'This action needs a supervisor account.' });
+    if (req.operator.role !== 'admin') {
+      return reply.code(403).send({ error: 'forbidden', message: 'This action needs an admin account.' });
     }
   };
 
@@ -283,11 +314,10 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     ),
   );
 
-  app.get('/api/me', { preHandler: requireOperator }, async (req) => ({
-    operator: req.operator,
-    permissions: permissions(req.operator!, cfg),
-    timeZone: cfg.TIMEZONE,
-  }));
+  app.get('/api/me', { preHandler: requireOperator }, async (req) => {
+    const extra = (await db.query<{ phone: string | null; area_id: string | null; on_duty: boolean }>('SELECT phone, area_id, on_duty FROM operators WHERE id = $1', [req.operator!.id])).rows[0];
+    return { operator: { ...req.operator, ...extra }, permissions: permissions(req.operator!, cfg), timeZone: cfg.TIMEZONE };
+  });
 
   // ---- overview (polled by every screen) --------------------------------
   function camerasView(snap: DashboardSnapshot, now: number, technical: boolean) {
@@ -310,7 +340,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
         frameHeight: c.frame_height,
         detectorKind: det.kind,
         detectorModel: technical ? det.model : undefined,
-        // Errors are only relevant while the feed is not live; raw text is shown to supervisors.
+        // Errors are only relevant while the feed is not live; raw text is shown to admins.
         lastError: state === 'live' ? null : technical ? c.last_error : c.last_error ? 'The camera source reported an error.' : null,
         lastErrorAt: state === 'live' ? null : c.last_error_at,
       };
@@ -402,7 +432,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     };
   });
 
-  app.get('/api/incidents/export.csv', { preHandler: requireSupervisor }, async (req, reply) => {
+  app.get('/api/incidents/export.csv', { preHandler: requireAdmin }, async (req, reply) => {
     const f = IncidentFiltersSchema.parse(req.query);
     const { rows, truncated } = await exportIncidents(db, f, listOpts(req));
     const iso = (d: Date | null) => (d ? d.toISOString() : '');
@@ -436,11 +466,15 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     const detail = await getIncidentDetail(db, id);
     if (!detail) return reply.code(404).send({ error: 'not_found', message: `Incident ${eventRef(id)} was not found.` });
     const { snapshot_path, ...event } = detail.event;
-    const camera = (await loadDashboard(db, { recentLimit: 0 })).cameras.find((c) => c.id === event.camera_id);
+    const camera = event.camera_id
+      ? (await db.query<{ label: string }>('SELECT label FROM cameras WHERE id = $1', [event.camera_id])).rows[0]
+      : undefined;
     return {
       event: { ...event, ref: eventRef(event.id), snapshotUrl: snapshot_path ? `/api/events/${event.id}/snapshot` : null },
       zone: zones.find((z) => z.id === event.zone_id && z.cameraId === event.camera_id) ?? null,
       cameraLabel: camera?.label ?? event.camera_id,
+      tourist: detail.tourist,
+      detection: detail.detection,
       actions: detail.actions,
       notifications: detail.notifications,
       timeline: detail.timeline,
@@ -586,19 +620,19 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     };
   });
 
-  // ---- operator management (supervisors) --------------------------------
+  // ---- operator management (admins) ------------------------------------
   const role = z.enum(ROLES as [string, ...string[]]).transform((r) => r as Operator['role']);
 
-  app.get('/api/operators', { preHandler: requireSupervisor }, async () => ({ operators: await listOperators(db) }));
+  app.get('/api/operators', { preHandler: requireAdmin }, async () => ({ operators: await listOperators(db) }));
 
-  app.post('/api/operators', { preHandler: requireSupervisor }, async (req, reply) => {
+  app.post('/api/operators', { preHandler: requireAdmin }, async (req, reply) => {
     const body = z.object({ id: z.string().trim(), name: z.string(), pin: z.string().trim(), role }).parse(req.body);
     const op = await createOperator(db, body);
     req.log.info({ by: req.operator!.id, operator: op.id, role: op.role }, 'operator created');
     return reply.code(201).send({ operator: op });
   });
 
-  app.patch('/api/operators/:opId', { preHandler: requireSupervisor }, async (req) => {
+  app.patch('/api/operators/:opId', { preHandler: requireAdmin }, async (req) => {
     const { opId } = z.object({ opId: z.string().max(32) }).parse(req.params);
     const body = z.object({ name: z.string().optional(), role: role.optional(), active: z.boolean().optional() }).parse(req.body);
     const op = await updateOperator(db, req.operator!.id, opId, body);
@@ -606,7 +640,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     return { operator: op };
   });
 
-  app.post('/api/operators/:opId/pin', { preHandler: requireSupervisor }, async (req) => {
+  app.post('/api/operators/:opId/pin', { preHandler: requireAdmin }, async (req) => {
     const { opId } = z.object({ opId: z.string().max(32) }).parse(req.params);
     const { pin } = z.object({ pin: z.string().trim() }).parse(req.body);
     await setOperatorPin(db, opId, pin);
@@ -614,6 +648,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     return { ok: true };
   });
 
+  await registerPlatformRoutes(app, cfg, db, { requireStaff: requireOperator, requireAdmin });
   await registerWebhooks(app, cfg, db);
   return app;
 }

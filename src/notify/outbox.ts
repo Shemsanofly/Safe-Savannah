@@ -4,7 +4,7 @@ import { errMsg, type Logger } from '../log.js';
 import { NOTIFY_CHANNEL } from '../store/events.js';
 import { mapDeliveryStatus } from './africasTalking.js';
 import { alertMessage } from './message.js';
-import type { SendOutcome, SmsProvider } from './provider.js';
+import type { SendOutcome, SmsProvider, VoiceProvider } from './provider.js';
 
 export type JobStatus =
   | 'pending'
@@ -31,6 +31,9 @@ export interface NotificationJobRow {
   provider_message_id: string | null;
   provider_status: string | null;
   message_body: string | null;
+  channel: 'sms' | 'voice';
+  to_number: string | null;
+  recipient_kind: 'duty' | 'ranger' | 'tourist' | 'admin';
   created_at: Date;
   updated_at: Date;
   accepted_at: Date | null;
@@ -39,6 +42,8 @@ export interface NotificationJobRow {
 
 export interface OutboxOptions {
   provider: SmsProvider;
+  /** Voice calls (Africa's Talking voice, or the labelled simulation). */
+  voice?: VoiceProvider;
   recipients: Map<string, string>;
   freshnessSeconds: number;
   testMode: boolean;
@@ -92,7 +97,7 @@ export class OutboxWorker {
     const claimed = await withTx(this.db, async (c) => {
       const r = await c.query<ClaimedJob>(
         `SELECT j.*, e.status AS event_status, e.last_seen_at AS event_last_seen_at,
-                e.zone_label, e.class_label, e.source
+                COALESCE(e.zone_label, e.title, 'the area') AS zone_label, COALESCE(e.class_label, 'wildlife') AS class_label, e.source
            FROM notification_jobs j JOIN events e ON e.id = j.event_id
           WHERE j.status IN ('pending', 'retry_wait') AND j.next_attempt_at <= now()
           ORDER BY j.next_attempt_at, j.id
@@ -102,14 +107,16 @@ export class OutboxWorker {
       const job = r.rows[0];
       if (!job) return null;
 
-      if (job.event_status === 'closed' || job.event_status === 'false_alert') {
+      // Alerts are pointless once an incident is closed; status updates (e.g. "your SOS is resolved") are not.
+      const isAlert = job.kind === 'initial' || job.kind === 'alert' || job.kind === 'voice_alert';
+      if (isAlert && (job.event_status === 'closed' || job.event_status === 'false_alert')) {
         await c.query(
           `UPDATE notification_jobs SET status = 'cancelled', updated_at = now(), last_error = $2 WHERE id = $1`,
           [job.id, `not sent: incident ${job.event_status} before the message could be sent`],
         );
         return { job, skip: true as const };
       }
-      const ageMs = Date.now() - job.event_last_seen_at.getTime();
+      const ageMs = Date.now() - (isAlert ? job.event_last_seen_at : job.created_at).getTime();
       if (ageMs > this.opts.freshnessSeconds * 1000) {
         await c.query(
           `UPDATE notification_jobs SET status = 'expired', updated_at = now(), last_error = $2 WHERE id = $1`,
@@ -117,7 +124,7 @@ export class OutboxWorker {
         );
         return { job, skip: true as const };
       }
-      const number = this.opts.recipients.get(job.recipient_alias);
+      const number = job.to_number ?? this.opts.recipients.get(job.recipient_alias);
       if (!number) {
         await c.query(
           `UPDATE notification_jobs SET status = 'failed', updated_at = now(), last_error = $2 WHERE id = $1`,
@@ -125,7 +132,7 @@ export class OutboxWorker {
         );
         return { job, skip: true as const };
       }
-      const body = alertMessage({
+      const body = job.message_body ?? alertMessage({
         eventId: job.event_id,
         zoneLabel: job.zone_label,
         classLabel: job.class_label,
@@ -136,7 +143,7 @@ export class OutboxWorker {
         `UPDATE notification_jobs
             SET status = 'sending', attempts = attempts + 1, provider = $2, message_body = $3, updated_at = now()
           WHERE id = $1`,
-        [job.id, this.opts.provider.name, body],
+        [job.id, job.channel === 'voice' ? (this.opts.voice?.name ?? 'none') : this.opts.provider.name, body],
       );
       return { job, skip: false as const, number, body };
     });
@@ -151,7 +158,13 @@ export class OutboxWorker {
     const startedAt = new Date();
     let outcome: SendOutcome;
     try {
-      outcome = await this.opts.provider.send({ recipientAlias: job.recipient_alias, to: number, body });
+      if (job.channel === 'voice') {
+        outcome = this.opts.voice
+          ? await this.opts.voice.call({ jobId: job.id, recipientAlias: job.recipient_alias, to: number, script: body })
+          : { kind: 'rejected', detail: 'No voice provider configured' };
+      } else {
+        outcome = await this.opts.provider.send({ recipientAlias: job.recipient_alias, to: number, body });
+      }
     } catch (err) {
       outcome = { kind: 'ambiguous', detail: `adapter threw: ${errMsg(err)}` };
     }

@@ -43,3 +43,16 @@ export function classifyNetworkError(err: unknown): SendOutcome {
   }
   return { kind: 'ambiguous', detail: `network: ${code ?? e?.cause?.message ?? e?.message ?? String(err)}` };
 }
+
+export interface VoiceCall {
+  jobId: number;
+  recipientAlias: string;
+  to: string;
+  /** Text read to the person who answers. */
+  script: string;
+}
+
+export interface VoiceProvider {
+  readonly name: string;
+  call(c: VoiceCall): Promise<SendOutcome>;
+}

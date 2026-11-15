@@ -1,9 +1,16 @@
 // App shell: hash router, status strip, nav badge, "last updated", connection-loss banner.
-import { BOOT, clear, el, icon, fmtTime } from './lib.js';
+import { api, BOOT, clear, el, icon, fmtTime, toast } from './lib.js';
 import { FEED } from './status.js';
 import * as store from './store.js';
 
 const VIEWS = {
+  ops: () => import('./views/ops.js'),
+  detections: () => import('./views/detections.js'),
+  ai: () => import('./views/ai.js'),
+  comms: () => import('./views/comms.js'),
+  stats: () => import('./views/stats.js'),
+  zones: () => import('./views/zones.js'),
+  people: () => import('./views/people.js'),
   overview: () => import('./views/overview.js'),
   incidents: () => import('./views/incidents.js'),
   incident: () => import('./views/incident.js'),
@@ -23,7 +30,7 @@ export function parseHash() {
   const parts = pathPart.split('/').filter(Boolean);
   const params = Object.fromEntries(new URLSearchParams(query));
   if (parts[0] === 'incidents' && parts[1]) return { name: 'incident', nav: 'incidents', id: Number(parts[1]), params };
-  const name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : 'overview';
+  const name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : 'ops';
   return { name, nav: name, params };
 }
 
@@ -86,21 +93,23 @@ function renderShell(s) {
   if (o) {
     const pills = [];
     const { unacknowledged, active } = o.counts;
-    if (unacknowledged > 0) pills.push(pill('#/incidents?status=open', 'urgent', 'incident', `${unacknowledged} need${unacknowledged === 1 ? 's' : ''} acknowledgement`, { dot: true, pulse: true }));
-    else if (active > 0) pills.push(pill('#/incidents?status=active', 'warn', 'incident', `${active} active incident${active === 1 ? '' : 's'}`));
+    const sosOpen = o.activeIncidents.filter((e) => e.kind === 'sos' && e.status === 'open').length;
+    if (sosOpen > 0) pills.push(pill('#/incidents?kind=sos&status=open', 'urgent', 'siren', `${sosOpen} SOS pending`, { dot: true, pulse: true }));
+    if (unacknowledged > 0) pills.push(pill('#/incidents?status=open', 'urgent', 'incident', `${unacknowledged} pending`, { dot: true, pulse: true }));
+    else if (active > 0) pills.push(pill('#/incidents?status=active', 'warn', 'incident', `${active} responding`));
     else pills.push(pill('#/incidents', 'ok', 'check-circle', 'No active incidents', { title: 'No incident is open. This does not mean the path is safe.' }));
     for (const c of o.cameras) {
       const f = FEED[c.feedState];
-      pills.push(pill('#/overview', f.tone, f.icon, `Camera ${f.label.toLowerCase()}`, { title: f.explain }));
+      pills.push(pill('#/overview', f.tone, f.icon, `Gate camera ${f.label.toLowerCase()}`, { title: f.explain }));
       if (c.detectorKind === 'simulated') pills.push(pill('#/settings', 'sim', 'flask', 'Simulated footage', { title: 'The detector is the scripted demo, not a real model.' }));
     }
-    if (o.cameras.length === 0) pills.push(pill('#/overview', 'bad', 'camera-off', 'No camera reporting'));
+    if (o.cameras.length === 0) pills.push(pill('#/overview', 'unknown', 'camera-off', 'Gate camera not running'));
     if (o.zones.some((z) => z.displayState === 'unknown')) pills.push(pill('#/overview', 'unknown', 'alert', 'Zone UNKNOWN', { title: 'No live frames: the system cannot tell what is in the zone.' }));
     const sms = o.sms;
-    if (sms.needsAttention > 0) pills.push(pill('#/notifications?group=problem', 'bad', 'sms', `SMS: ${sms.needsAttention} need${sms.needsAttention === 1 ? 's' : ''} attention`));
-    else if (sms.queued > 0) pills.push(pill('#/notifications?group=queued', 'warn', 'sms', `SMS: ${sms.queued} queued`));
-    if (sms.mode === 'mock') pills.push(pill('#/notifications', 'mock', 'sms', 'Mock SMS — no real messages'));
-    else if (sms.mode === 'sandbox') pills.push(pill('#/notifications', 'mock', 'sms', 'SMS sandbox'));
+    if (sms.needsAttention > 0) pills.push(pill('#/comms', 'bad', 'sms', `SMS: ${sms.needsAttention} need${sms.needsAttention === 1 ? 's' : ''} attention`));
+    else if (sms.queued > 0) pills.push(pill('#/comms', 'warn', 'sms', `SMS: ${sms.queued} queued`));
+    if (sms.mode === 'mock') pills.push(pill('#/comms', 'mock', 'sms', 'SMS simulated — not sent'));
+    else if (sms.mode === 'sandbox') pills.push(pill('#/comms', 'mock', 'sms', "SMS: Africa's Talking sandbox"));
     // When the server cannot be reached, keep the last known status but mark it clearly as out of date.
     const outdated = !!s.error && s.failures >= 2;
     strip.classList.toggle('is-stale', outdated);
@@ -150,8 +159,48 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-window.addEventListener('hashchange', route);
-if (!location.hash) history.replaceState(null, '', '#/overview');
+window.addEventListener('hashchange', () => {
+  closeNav();
+  route();
+});
+
+// Phones: "More" opens the full navigation as a sheet.
+const nav = document.getElementById('sidenav');
+const moreBtn = document.querySelector('.nav-more');
+function closeNav() {
+  nav?.classList.remove('is-open');
+  moreBtn?.setAttribute('aria-expanded', 'false');
+}
+moreBtn?.addEventListener('click', () => {
+  const open = !nav.classList.contains('is-open');
+  nav.classList.toggle('is-open', open);
+  moreBtn.setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && nav?.classList.contains('is-open')) {
+    closeNav();
+    moreBtn.focus();
+  }
+});
+
+// On-duty toggle (rangers on duty receive alert SMS and calls).
+const duty = document.getElementById('duty-toggle');
+if (duty) {
+  api.get('/api/me').then((me) => {
+    duty.checked = !!me.operator.on_duty;
+    if (!me.operator.phone) duty.parentElement.title = 'No phone number on your account — ask an admin to add one to receive SMS.';
+  }).catch(() => undefined);
+  duty.addEventListener('change', async () => {
+    try {
+      await api.patch('/api/me', { on_duty: duty.checked });
+      toast(duty.checked ? 'You are on duty: you will receive alert SMS and calls.' : 'You are off duty: alerts go to other rangers.');
+    } catch (err) {
+      duty.checked = !duty.checked;
+      toast(err.message, 'error');
+    }
+  });
+}
+if (!location.hash) history.replaceState(null, '', '#/ops');
 store.start();
 route();
 // Fetch every screen once up front so navigation still works if the server drops out briefly.

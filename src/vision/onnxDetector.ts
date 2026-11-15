@@ -32,8 +32,8 @@ export async function sha256File(file: string): Promise<string> {
 
 export interface OnnxDetectorOptions {
   manifestPath: string;
-  /** Labels to report; resolved to class indices via the manifest. */
-  classes: string[];
+  /** Labels to report (resolved to class indices via the manifest), or 'all'. */
+  classes: string[] | 'all';
   minConfidence: number;
   iouThreshold?: number;
   threads?: number;
@@ -57,7 +57,7 @@ export class OnnxYoloDetector implements Detector {
       throw new Error(`Model checksum mismatch for ${modelPath}: manifest pins ${manifest.sha256}, file is ${actual}`);
     }
     const classIds = new Set<number>();
-    for (const label of opts.classes) {
+    for (const label of opts.classes === 'all' ? manifest.labels : opts.classes) {
       const idx = manifest.labels.indexOf(label);
       if (idx < 0) throw new Error(`Model ${manifest.name} has no class labelled "${label}"`);
       classIds.add(idx);

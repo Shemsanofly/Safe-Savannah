@@ -1,8 +1,9 @@
 // Incident detail: evidence, ownership, actions, SMS history and a chronological activity log.
 import { age, api, BOOT, clear, confirmDialog, el, fmtDateTime, fmtDuration, fmtTime, icon, initials, runAction, uid, validateRequired } from '../lib.js';
 import {
-  ACTION, CHANNEL, INCIDENT, RESENDABLE, SMS, incidentBadge, smsActionHint, smsBadge, smsDetail, sourceBadge, SOURCE,
+  ACTION, CHANNEL, EMERGENCY, INCIDENT, RESENDABLE, SMS, demoBadge, incidentBadge, kindBadge, riskBadge, smsActionHint, smsBadge, smsDetail, sourceBadge, SOURCE,
 } from '../status.js';
+import { createMap } from '../map.js';
 import * as store from '../store.js';
 
 function lastListHash() {
@@ -13,7 +14,7 @@ function lastListHash() {
   }
 }
 
-const FALSE_REASONS = ['Vehicle', 'Person or staff', 'Other animal', 'Shadow, vegetation or rock', 'Camera or lighting glitch', 'Other'];
+const FALSE_REASONS = ['Vehicle', 'Person or staff', 'Other animal', 'Shadow, vegetation or rock', 'Camera or lighting glitch', 'Duplicate report', 'Test or accidental press', 'Other'];
 
 export function mount(main, ctx) {
   const id = ctx.id;
@@ -24,6 +25,7 @@ export function mount(main, ctx) {
   let lastEvKey = '';
   let grid = null;
   let lastTlKey = '';
+  let miniMap = null;
 
   const head = el('div', { class: 'page-head' });
   const explainer = el('div', { class: 'status-explainer', role: 'status' });
@@ -38,7 +40,7 @@ export function mount(main, ctx) {
     grid = el('div', { class: 'detail-grid' },
       el('div', { class: 'stack' },
         el('section', { class: 'panel', 'aria-labelledby': 'ev-title' },
-          el('div', { class: 'panel-head' }, el('h2', { id: 'ev-title' }, icon('camera'), 'Detection')),
+          el('div', { class: 'panel-head' }, el('h2', { id: 'ev-title' }, icon('camera'), 'Details')),
           el('div', { class: 'panel-body' }, evidence)),
         el('section', { class: 'panel', 'aria-labelledby': 'tl-title' },
           el('div', { class: 'panel-head' }, el('h2', { id: 'tl-title' }, icon('clock'), 'Activity'), el('span', { class: 'muted small' }, 'Oldest first')),
@@ -48,7 +50,7 @@ export function mount(main, ctx) {
           el('div', { class: 'panel-head' }, el('h2', { id: 'act-title' }, icon('user'), 'Ownership & actions')),
           el('div', { class: 'panel-body' }, actionPanel)),
         el('section', { class: 'panel', 'aria-labelledby': 'sms-title' },
-          el('div', { class: 'panel-head' }, el('h2', { id: 'sms-title' }, icon('sms'), 'SMS notifications')),
+          el('div', { class: 'panel-head' }, el('h2', { id: 'sms-title' }, icon('sms'), 'Messages & calls')),
           el('div', { class: 'panel-body' }, smsBox)))),
   );
   clear(head, el('div', {}, el('h1', {}, `Incident`), el('p', { class: 'sub' }, 'Loading…')));
@@ -82,15 +84,21 @@ export function mount(main, ctx) {
     grid.classList.toggle('is-active', active);
     clear(head,
       el('div', {},
-        el('h1', {}, `${e.ref} · ${e.zone_label}`),
-        el('div', { class: 'row', style: null }, incidentBadge(e.status, { pill: true }), sourceBadge(e.source, { pill: true }),
-          el('span', { class: 'muted small' }, `Opened ${fmtDateTime(e.opened_at)}${active ? ` · ${age(e.opened_at)} ago` : ''}`))));
+        el('h1', {}, `${e.ref} · ${e.title || e.zone_label || 'Incident'}`),
+        el('div', { class: 'row', style: null }, kindBadge(e.kind, { pill: true }), riskBadge(e.risk_level, { pill: true }), incidentBadge(e.status, { pill: true }),
+          sourceBadge(e.source, { pill: true }), e.demo ? demoBadge() : null,
+          el('span', { class: 'muted small' }, `${e.area_name ? `${e.area_name} · ` : ''}Opened ${fmtDateTime(e.opened_at)}${active ? ` · ${age(e.opened_at)} ago` : ''}`))),
+      el('ol', { class: 'status-steps', 'aria-label': 'Incident status' },
+        [['open', 'Pending'], ['acknowledged', 'Responding'], ['closed', 'Resolved']].map(([k, l], i) => {
+          const order = { open: 0, acknowledged: 1, closed: 2, false_alert: 2 }[e.status];
+          return el('li', { class: order === i ? 'is-current' : order > i ? 'is-done' : '', 'aria-current': order === i ? 'step' : null }, l);
+        })));
     document.title = `${e.ref} · Safe Savannah`;
     explainer.className = `status-explainer tone-${def.tone === 'urgent' ? 'urgent' : def.tone}`;
     clear(explainer, icon(def.icon), el('div', {}, el('strong', {}, def.label), el('p', { class: 'small' }, def.explain),
       e.source !== 'inference' ? el('p', { class: 'small' }, SOURCE[e.source].explain) : null));
 
-    const evKey = JSON.stringify([e.status, e.last_seen_at, e.confidence, e.acknowledged_at, e.snapshotUrl, data.cameraLabel]);
+    const evKey = JSON.stringify([e.status, e.last_seen_at, e.confidence, e.acknowledged_at, e.snapshotUrl, data.cameraLabel, e.risk_level]);
     if (evKey !== lastEvKey) {
       renderEvidence(e);
       lastEvKey = evKey;
@@ -105,27 +113,69 @@ export function mount(main, ctx) {
   }
 
   function renderEvidence(e) {
-    const snap = el('div', { class: 'snapshot' });
-    if (e.snapshotUrl) {
-      const img = el('img', { src: e.snapshotUrl, alt: `Snapshot that triggered ${e.ref}: detection box over ${e.zone_label}`, loading: 'lazy' });
-      img.addEventListener('error', () => clear(snap, el('div', { class: 'empty' }, icon('image-off'), el('strong', {}, 'Snapshot could not be loaded'),
-        el('p', {}, 'The image file may have been removed from this laptop. The rest of the record is intact.'))));
-      snap.append(el('a', { href: e.snapshotUrl, target: '_blank', rel: 'noopener', 'aria-label': `Open the ${e.ref} snapshot full size` }, img));
-    } else {
-      snap.append(el('div', { class: 'empty' }, icon('image-off'), el('strong', {}, 'No snapshot for this incident'),
-        el('p', {}, e.source === 'synthetic' ? 'Test incidents are created without a camera image.' : 'No image was saved when this alert opened.')));
-    }
     const ackSecs = e.acknowledged_at ? (Date.parse(e.acknowledged_at) - Date.parse(e.opened_at)) / 1000 : null;
-    clear(evidence, snap, el('dl', { class: 'facts' },
-      fact('Camera', data.cameraLabel),
-      fact('Zone', e.zone_label),
-      fact('Detected', `${e.class_label}, peak confidence ${Math.round(e.confidence * 100)}%`),
-      fact('Detection source', SOURCE[e.source]?.label || e.source),
-      fact('First seen in zone', fmtTime(e.first_seen_at)),
-      fact('Alert opened', `${fmtDateTime(e.opened_at)} (${fmtDuration((Date.parse(e.opened_at) - Date.parse(e.first_seen_at)) / 1000)} after first sighting)`),
-      fact('Last seen in zone', fmtDateTime(e.last_seen_at)),
-      fact('Time to acknowledge', ackSecs === null ? (e.status === 'open' ? `waiting ${age(e.opened_at)}` : '—') : fmtDuration(ackSecs)),
-      BOOT.permissions?.canViewTechnical && e.model ? fact('Model', e.model) : null));
+    const respond = fact('Time to respond', ackSecs === null ? (e.status === 'open' ? `waiting ${age(e.opened_at)}` : '—') : fmtDuration(ackSecs));
+    const mapBox = el('div', { dataset: { size: 'sm' } });
+    const parts = [];
+    if (e.kind === 'sos') {
+      const t = data.tourist;
+      const em = EMERGENCY[e.emergency_type] || { label: e.emergency_type, icon: 'siren' };
+      parts.push(
+        el('div', { class: 'alert alert-error' }, icon(em.icon), el('div', { class: 'grow' }, el('strong', {}, `${em.label} — reported via ${(e.report_channel || 'app').toUpperCase()}. `),
+          e.description ? `"${e.description}"` : 'No description given.')),
+        el('dl', { class: 'facts' },
+          fact('Reported by', t ? [t.name, t.demo ? [' ', demoBadge()] : null] : 'Unregistered caller'),
+          fact('Phone', e.reporter_phone ? el('a', { href: `tel:${e.reporter_phone}`, class: 'strong' }, `${e.reporter_phone} (tap to call)`) : '—'),
+          t ? fact('Group size', String(t.group_size)) : null,
+          t?.lodge ? fact('Staying at', t.lodge) : null,
+          t ? fact('Language', t.language === 'sw' ? 'Kiswahili' : 'English') : null,
+          t?.nationality ? fact('Nationality', t.nationality) : null,
+          fact('Location', e.lat !== null ? (e.zone_label || 'Shared from phone') : 'Not shared'),
+          respond));
+    } else {
+      const snap = el('div', { class: 'snapshot' });
+      if (e.snapshotUrl) {
+        const img = el('img', { src: e.snapshotUrl, alt: `Image that triggered ${e.ref}`, loading: 'lazy' });
+        img.addEventListener('error', () => clear(snap, el('div', { class: 'empty' }, icon('image-off'), el('strong', {}, 'Image could not be loaded'),
+          el('p', {}, 'The image file may have been removed from this laptop. The rest of the record is intact.'))));
+        snap.append(el('a', { href: e.snapshotUrl, target: '_blank', rel: 'noopener', 'aria-label': `Open the ${e.ref} image full size` }, img));
+      } else {
+        snap.append(el('div', { class: 'empty' }, icon('image-off'), el('strong', {}, 'No image for this incident'),
+          el('p', {}, e.source === 'simulated' ? 'Simulated detections have no camera image.' : e.source === 'synthetic' ? 'Test incidents are created without a camera image.' : 'No image was saved when this alert opened.')));
+      }
+      const d = data.detection;
+      parts.push(snap, el('dl', { class: 'facts' },
+        fact('Camera', data.cameraLabel || '—'),
+        fact(e.kind === 'zone_alert' ? 'Camera zone' : 'Safety zone', e.zone_label || '—'),
+        fact('Detected', e.class_label ? `${e.class_label}, peak confidence ${Math.round((e.confidence || 0) * 100)}%` : '—'),
+        fact('Detection source', [SOURCE[e.source]?.label || e.source, d ? ` · ${d.input === 'upload' ? 'uploaded photo' : d.input === 'camera' ? 'live camera' : 'simulated camera'}` : '']),
+        d?.zone_name ? fact('Distance', d.inside_zone ? `Inside ${d.zone_name}` : `${Math.round(d.distance_m)} m from ${d.zone_name} (alert distance ${d.buffer_m} m)`) : null,
+        fact('First seen', fmtTime(e.first_seen_at)),
+        fact('Last seen', fmtDateTime(e.last_seen_at)),
+        respond,
+        BOOT.permissions?.canViewTechnical && e.model ? fact('Model', e.model) : null));
+      const reasons = e.risk_reasons || d?.risk_reasons;
+      if (reasons?.length) parts.push(el('div', { class: 'stack' }, el('h3', {}, 'Why this risk level'), el('ul', { class: 'reasons' }, reasons.map((r) => el('li', {}, r)))));
+    }
+    if (e.lat !== null && e.lng !== null) parts.push(el('h3', {}, 'Location'), mapBox);
+    clear(evidence, ...parts);
+    if (e.lat !== null && e.lng !== null) drawMiniMap(mapBox, e);
+  }
+
+  async function drawMiniMap(box, e) {
+    try {
+      const m = await createMap(box, { center: [e.lat, e.lng], zoom: 15 });
+      miniMap?.destroy();
+      miniMap = m;
+      if (e.area_id) {
+        const z = await api.get(`/api/zones?area=${encodeURIComponent(e.area_id)}`);
+        m.drawZones(z.zones);
+      }
+      m.drawIncidents([{ ...e, ref: e.ref }]);
+      m.map.setView([e.lat, e.lng], 15);
+    } catch {
+      clear(box, el('p', { class: 'muted small' }, 'Map unavailable.'));
+    }
   }
 
   // ---------------------------------------------------------------- actions
@@ -140,22 +190,24 @@ export function mount(main, ctx) {
     updateOwner(e);
 
     if (e.status === 'open') {
-      const btn = el('button', { type: 'button', class: 'btn btn-urgent btn-lg btn-block' }, icon('user'), el('span', {}, 'Acknowledge — I take ownership'));
+      const btn = el('button', { type: 'button', class: 'btn btn-urgent btn-lg btn-block' }, icon('user'), el('span', {}, "I'm responding — take ownership"));
       const status = el('p', { class: 'form-status', 'aria-live': 'polite' });
       btn.addEventListener('click', () => runAction(btn, status, async () => {
-        const r = await api.post(`/api/events/${e.id}/acknowledge`);
-        if (r.alreadyAcknowledged) throw new Error(`Already acknowledged by ${r.event.acknowledged_by}.`);
+        const r = await api.post(`/api/incidents/${e.id}/status`, { status: 'responding' });
+        if (r.alreadyResponding) throw new Error(`${r.event.acknowledged_by} is already responding.`);
         await Promise.all([load(), store.refresh()]);
-      }, { success: `${e.ref} acknowledged — you own it now. Verify, then log your handoff.` }));
-      actionPanel.append(btn, status, el('p', { class: 'hint' }, 'Acknowledging records that you have taken ownership. It does not mark the incident as handled.'));
+      }, { success: `You are responding to ${e.ref}. Verify, coordinate by radio, and log handoffs.` }));
+      actionPanel.append(btn, status, el('p', { class: 'hint' }, e.kind === 'sos'
+        ? 'The reporter gets an SMS that a ranger is responding. Call them if you can.'
+        : 'Marks the incident as Responding with you as owner. It does not mean the situation is handled.'));
       return;
     }
 
     if (e.status === 'acknowledged') {
       const tabs = [
         { id: 'handoff', label: 'Log handoff', icon: 'radio', panel: handoffForm(e) },
-        { id: 'close', label: 'Close incident', icon: 'check-circle', panel: closeForm(e) },
-        { id: 'dismiss', label: 'False alert', icon: 'x', panel: dismissForm(e) },
+        { id: 'close', label: 'Resolve', icon: 'check-circle', panel: closeForm(e) },
+        { id: 'dismiss', label: 'False alarm', icon: 'x', panel: dismissForm(e) },
         { id: 'note', label: 'Add note', icon: 'note', panel: noteForm(e) },
       ];
       const tablist = el('div', { class: 'tabs', role: 'tablist', 'aria-label': 'Incident actions' });
@@ -208,7 +260,7 @@ export function mount(main, ctx) {
   }
 
   /** Shared form builder: textarea + submit with validation, progress and idempotency key. */
-  function actionForm({ e, fields = [], label, placeholder, hintText, submitLabel, submitClass = 'btn-primary', body, success, confirm }) {
+  function actionForm({ e, fields = [], label, placeholder, hintText, submitLabel, submitClass = 'btn-primary', body, success, confirm, url }) {
     let clientActionId = uid();
     const fid = `f-${uid().slice(0, 8)}`;
     const note = el('textarea', { id: `${fid}-note`, maxlength: '500', placeholder, 'aria-describedby': `${fid}-hint ${fid}-err`, required: true });
@@ -230,7 +282,7 @@ export function mount(main, ctx) {
       if (!validateRequired(note, err, 'Please add a short note before saving.')) return;
       if (confirm && !(await confirmDialog(confirm()))) return;
       const result = await runAction(btn, status, async () => {
-        const r = await api.post(`/api/events/${e.id}/actions`, { ...body(note.value.trim()), clientActionId });
+        const r = await api.post(url || `/api/events/${e.id}/actions`, { ...body(note.value.trim()), clientActionId });
         await Promise.all([load(), store.refresh()]);
         return r;
       }, { success });
@@ -257,9 +309,9 @@ export function mount(main, ctx) {
   function closeForm(e) {
     return actionForm({
       e, label: 'What did you verify?', placeholder: 'e.g. Herd moved east off the path; guides informed by radio',
-      hintText: 'Closing re-arms the zone once it has stayed empty for the clear window.', submitLabel: 'Close incident',
-      body: (note) => ({ type: 'close', note }), success: `${e.ref} closed.`,
-      confirm: () => ({ title: `Close ${e.ref}?`, body: 'Only close once you have verified the situation. Closing does not mean the path is safe; the camera keeps watching.', confirmLabel: 'Close incident' }),
+      hintText: e.kind === 'sos' ? 'The reporter is told by SMS that it is resolved.' : 'Further sightings from this camera and zone can open a new incident afterwards.', submitLabel: 'Mark resolved',
+      url: `/api/incidents/${e.id}/status`, body: (note) => ({ status: 'resolved', outcome: 'handled', note }), success: `${e.ref} resolved.`,
+      confirm: () => ({ title: `Resolve ${e.ref}?`, body: 'Only resolve once you have verified the situation. Resolved does not mean the area is safe; cameras keep watching.', confirmLabel: 'Mark resolved' }),
     });
   }
 
@@ -268,9 +320,9 @@ export function mount(main, ctx) {
     const form = actionForm({
       e, fields: [el('div', { class: 'field' }, el('label', { for: `reason-${e.id}` }, 'What was it?'), reason)],
       label: 'Details', placeholder: 'e.g. Supply truck on the service road', hintText: 'Recorded with the reason above.',
-      submitLabel: 'Record false alert', submitClass: 'btn-amber',
-      body: (note) => ({ type: 'dismiss', note: `${reason.value}: ${note}` }), success: `${e.ref} recorded as a false alert.`,
-      confirm: () => ({ title: `Record ${e.ref} as a false alert?`, body: `Reason: ${reason.value}. This closes the incident.`, confirmLabel: 'Record false alert' }),
+      submitLabel: 'Resolve as false alarm', submitClass: 'btn-amber',
+      url: `/api/incidents/${e.id}/status`, body: (note) => ({ status: 'resolved', outcome: 'false_alarm', note: `${reason.value}: ${note}` }), success: `${e.ref} resolved as a false alarm.`,
+      confirm: () => ({ title: `Resolve ${e.ref} as a false alarm?`, body: `Reason: ${reason.value}.`, confirmLabel: 'Resolve as false alarm' }),
     });
     return form;
   }
@@ -316,7 +368,7 @@ export function mount(main, ctx) {
         });
         return el('div', { class: 'sms-job' },
           el('div', { class: 'sms-head' },
-            el('div', { class: 'row' }, el('strong', {}, `To ${j.recipient_alias}`), smsBadge(j.status), isMock ? el('span', { class: 'badge tone-mock' }, 'Mock — not sent to a phone') : null),
+            el('div', { class: 'row' }, el('span', { class: 'badge tone-muted' }, icon(j.channel === 'voice' ? 'phone' : 'sms'), j.channel === 'voice' ? 'Voice call' : 'SMS'), el('strong', {}, `To ${j.recipient_alias}`), smsBadge(j.status), isMock ? el('span', { class: 'badge tone-mock' }, 'Mock — not sent to a phone') : j.provider === 'simulated-voice' ? el('span', { class: 'badge tone-mock' }, 'Simulated call — no phone rang') : null),
             el('div', { class: 'row' }, resend, status)),
           el('p', { class: 'sms-explain' }, smsDetail(j)),
           hint ? el('div', { class: `alert ${['retry_wait'].includes(j.status) ? 'alert-info' : 'alert-warn'}` }, icon('info'), el('span', {}, hint)) : null,
@@ -347,16 +399,16 @@ export function mount(main, ctx) {
         ic = a.icon;
         tone = a.tone;
         title = a.label + (t.channel && t.channel !== 'dashboard' ? ` via ${CHANNEL[t.channel] || t.channel}` : '');
-        who = t.actor.startsWith('system:') ? 'System' : t.actorName || t.actor;
+        who = t.actor.startsWith('system:') ? 'System' : t.actor.startsWith('tourist:') ? `Tourist ${data.tourist?.name ?? ''}`.trim() : t.actor.includes(':') ? `Caller ${t.actor.split(':')[1]}` : t.actorName || t.actor;
         note = t.note;
       } else if (t.kind === 'sms_queued') {
         ic = 'sms';
-        title = `SMS to ${t.recipient} queued`;
+        title = `${t.channel === 'voice' ? 'Voice call' : 'SMS'} to ${t.recipient} queued`;
         who = 'System';
       } else if (t.kind === 'sms_attempt') {
         ic = t.outcome === 'accepted' ? 'check' : t.outcome === 'transient' ? 'refresh' : 'alert';
         tone = t.outcome === 'accepted' ? 'ok' : t.outcome === 'transient' ? 'warn' : 'bad';
-        title = `SMS to ${t.recipient}: ${attemptLabel(t.outcome).toLowerCase()}`;
+        title = `${t.channel === 'voice' ? 'Voice call' : 'SMS'} to ${t.recipient}: ${attemptLabel(t.outcome).toLowerCase()}`;
         who = 'SMS provider';
         note = t.detail;
       } else if (t.kind === 'sms_delivery') {
@@ -392,6 +444,7 @@ export function mount(main, ctx) {
     destroy() {
       destroyed = true;
       clearInterval(timer);
+      miniMap?.destroy();
     },
   };
 }

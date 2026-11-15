@@ -59,7 +59,8 @@ export async function loadDashboard(db: Queryable, opts: { recentLimit?: number 
   const [actions, jobs, cameras, zones, lastAction, lastAttempt, queued, mock] = await Promise.all([
     db.query<EventActionRow>('SELECT * FROM event_actions WHERE event_id = ANY($1) ORDER BY created_at, id', [ids]),
     db.query<NotificationJobRow>('SELECT * FROM notification_jobs WHERE event_id = ANY($1) ORDER BY id', [ids]),
-    db.query<CameraRow>('SELECT * FROM cameras ORDER BY id'),
+    // Only cameras with a running vision worker (simulated/planned stations appear on the map instead).
+    db.query<CameraRow>(`SELECT * FROM cameras WHERE source_kind <> 'none' ORDER BY id`),
     db.query<ZoneStatusRow>('SELECT * FROM zone_status ORDER BY camera_id, zone_id'),
     db.query<{ at: Date | null }>(`SELECT max(created_at) AS at FROM event_actions WHERE actor NOT LIKE 'system:%'`),
     db.query<{ at: Date; outcome: string; detail: string | null }>(

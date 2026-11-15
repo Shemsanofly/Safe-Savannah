@@ -1,4 +1,4 @@
-// Settings: read-only view of how the system is configured (no secrets), plus operator management for supervisors.
+// Settings: read-only view of how the system is configured (no secrets), plus operator management for admins.
 import { api, BOOT, clear, confirmDialog, el, fmtDate, icon, runAction, validateRequired } from '../lib.js';
 
 export function mount(main) {
@@ -13,7 +13,7 @@ export function mount(main) {
     try {
       const s = await api.get('/api/settings');
       render(s);
-      if (s.permissions.canManageOperators) loadOperators();
+      if (s.permissions.canManageOperators) clear(operatorsBox, el('div', { class: 'alert alert-info section' }, icon('users'), el('div', { class: 'grow' }, 'Rangers, admins and tourist accounts are managed under '), el('a', { class: 'btn btn-sm', href: '#/people' }, 'People')));
     } catch (err) {
       clear(body, el('div', { class: 'alert alert-error', role: 'alert' }, icon('alert'), el('div', { class: 'grow' }, el('strong', {}, 'Could not load settings. '), err.message),
         el('button', { type: 'button', class: 'btn btn-sm', onclick: load }, 'Try again')));
@@ -51,11 +51,11 @@ export function mount(main) {
         ]),
         section('clock', 'Time', [
           ['Lodge time zone', s.timeZone],
-          ['Your role', BOOT.operator.role === 'supervisor' ? 'Supervisor — can export records and manage operators' : 'Duty officer'],
+          ['Your role', BOOT.operator.role === 'admin' ? 'Admin — can export records and manage users, zones and settings' : 'Ranger'],
         ]),
       ),
       s.technical ? el('details', { class: 'panel' },
-        el('summary', { class: 'panel-head', style: null }, el('h2', {}, icon('settings'), 'Technical details (supervisors)')),
+        el('summary', { class: 'panel-head', style: null }, el('h2', {}, icon('settings'), 'Technical details (admins)')),
         el('div', { class: 'panel-body' }, el('dl', { class: 'facts', style: null },
           fact('Camera source', s.technical.cameraSource),
           fact('Detector model', s.technical.detectorModel || '—'),
@@ -87,10 +87,10 @@ export function mount(main) {
     const rows = ops.map((o) => {
       const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
       const self = o.id === BOOT.operator.id;
-      const roleSel = el('select', { 'aria-label': `Role for ${o.name}`, disabled: self }, [['officer', 'Duty officer'], ['supervisor', 'Supervisor']].map(([v, l]) => el('option', { value: v }, l)));
+      const roleSel = el('select', { 'aria-label': `Role for ${o.name}`, disabled: self }, [['ranger', 'Ranger'], ['admin', 'Admin']].map(([v, l]) => el('option', { value: v }, l)));
       roleSel.value = o.role;
       roleSel.addEventListener('change', async () => {
-        const ok = await confirmDialog({ title: `Change ${o.name}'s role?`, body: `They will become a ${roleSel.value === 'supervisor' ? 'supervisor' : 'duty officer'} and will need to sign in again.`, confirmLabel: 'Change role' });
+        const ok = await confirmDialog({ title: `Change ${o.name}'s role?`, body: `They will become a ${roleSel.value === 'admin' ? 'admin' : 'ranger'} and will need to sign in again.`, confirmLabel: 'Change role' });
         if (!ok) {
           roleSel.value = o.role;
           return;
@@ -117,7 +117,7 @@ export function mount(main) {
         el('td', { 'data-label': 'Actions' }, el('div', { class: 'row' }, pinBtn, toggle, status)));
     });
     clear(operatorsBox, el('section', { class: 'section', 'aria-labelledby': 'ops-title' },
-      el('div', { class: 'section-head' }, el('h2', { id: 'ops-title' }, 'Operators'), el('span', { class: 'muted small' }, 'Supervisors only')),
+      el('div', { class: 'section-head' }, el('h2', { id: 'ops-title' }, 'Operators'), el('span', { class: 'muted small' }, 'Admins only')),
       el('div', { class: 'table-wrap' }, el('table', { class: 'data table-cards' },
         el('thead', {}, el('tr', {}, ['Name', 'Role', 'Status', 'Added', 'Actions'].map((h) => el('th', { scope: 'col' }, h)))),
         el('tbody', {}, rows))),
@@ -128,7 +128,7 @@ export function mount(main) {
     const id = el('input', { id: 'op-id', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', maxlength: '32', pattern: '[A-Za-z0-9_-]{2,32}' });
     const name = el('input', { id: 'op-name', autocomplete: 'off', maxlength: '60' });
     const pin = el('input', { id: 'op-pin', type: 'password', inputmode: 'numeric', autocomplete: 'new-password', maxlength: '12' });
-    const role = el('select', { id: 'op-role' }, el('option', { value: 'officer' }, 'Duty officer'), el('option', { value: 'supervisor' }, 'Supervisor'));
+    const role = el('select', { id: 'op-role' }, el('option', { value: 'ranger' }, 'Ranger'), el('option', { value: 'admin' }, 'Admin'));
     const err = el('p', { class: 'field-error', hidden: true, role: 'alert' });
     const btn = el('button', { type: 'submit', class: 'btn btn-primary' }, icon('plus'), el('span', {}, 'Add operator'));
     const status = el('span', { class: 'form-status', 'aria-live': 'polite' });

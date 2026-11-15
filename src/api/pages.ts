@@ -22,7 +22,7 @@ function loadSprite(): string {
 const SPRITE = loadSprite();
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-const icon = (id: string, cls = 'icon') => `<svg class="${cls}" aria-hidden="true" focusable="false"><use href="#${id}"></use></svg>`;
+const icon = (id: string, cls = 'icon') => `<svg class="${cls}" aria-hidden="true" focusable="false"><use href="#i-${id}"></use></svg>`;
 
 function layout(title: string, body: string, bodyClass: string): string {
   return `<!doctype html>
@@ -67,20 +67,20 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
   <section class="login-brand" aria-labelledby="brand-title">
     <div class="login-brand-inner">
       <p class="brand-mark">${icon('logo', 'logo')}<span>Safe Savannah</span></p>
-      <h1 id="brand-title">Duty operations centre</h1>
-      <p class="lede">Early warning when an elephant enters a marked guest approach. Verify every alert, then follow your radio procedure.</p>
+      <h1 id="brand-title">Wildlife monitoring &amp; tourist safety</h1>
+      <p class="lede">AI camera alerts, geofenced safety zones and tourist SOS for Tanzania's parks and lodges — alongside, never instead of, your radio procedure.</p>
       <ul class="login-points">
-        <li>${icon('camera')} One fixed camera, one marked zone</li>
-        <li>${icon('sms')} One SMS to the duty phone per alert</li>
-        <li>${icon('radio')} Every acknowledgement and handoff is logged</li>
+        <li>${icon('cpu')} Camera detections scored by species, distance and who is nearby</li>
+        <li>${icon('incident')} Tourist SOS by app, USSD or voice call</li>
+        <li>${icon('sms')} Ranger and tourist alerts via Africa's Talking</li>
       </ul>
     </div>
     ${landscape}
   </section>
   <section class="login-panel">
     <form method="post" action="/login" class="login-card" novalidate data-login>
-      <h2>Sign in</h2>
-      <p class="muted">Use the operator ID and PIN issued by your duty manager.</p>
+      <h2>Staff sign in</h2>
+      <p class="muted">Rangers and administrators: use the ID and PIN issued by your park admin.</p>
       ${error ? `<div class="alert alert-error" role="alert" id="login-error">${icon('alert')}<span>${esc(error)}</span></div>` : ''}
       <div class="field">
         <label for="operatorId">Operator ID</label>
@@ -89,10 +89,11 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
       <div class="field">
         <label for="pin">PIN</label>
         <input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required ${operatorId ? 'autofocus' : ''}>
-        <p class="hint">4–12 digits. Ask a supervisor if you have forgotten it.</p>
+        <p class="hint">4–12 digits. Ask an admin if you have forgotten it.</p>
       </div>
       <button type="submit" class="btn btn-primary btn-block">${icon('login')}<span>Sign in</span></button>
-      <p class="login-foot muted small">${icon('shield', 'icon icon-sm')} Sessions end after a shift or when a supervisor resets your PIN.</p>
+      <p class="login-alt">Travelling? <a href="/t">Open the tourist safety app</a></p>
+      <p class="login-foot muted small">${icon('shield', 'icon icon-sm')} Sessions end after a shift or when an admin resets your PIN.</p>
     </form>
   </section>
 </main>
@@ -101,11 +102,17 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
   );
 }
 
-const NAV: { route: string; label: string; short: string; icon: string }[] = [
-  { route: 'overview', label: 'Overview', short: 'Overview', icon: 'overview' },
-  { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident' },
-  { route: 'history', label: 'History & reports', short: 'Reports', icon: 'chart' },
-  { route: 'notifications', label: 'SMS notifications', short: 'SMS', icon: 'sms' },
+const NAV: { route: string; label: string; short: string; icon: string; admin?: boolean; primary?: boolean }[] = [
+  { route: 'ops', label: 'Operations map', short: 'Map', icon: 'map', primary: true },
+  { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident', primary: true },
+  { route: 'detections', label: 'Wildlife detections', short: 'Detections', icon: 'paw' },
+  { route: 'ai', label: 'AI monitor', short: 'AI', icon: 'cpu', primary: true },
+  { route: 'overview', label: 'Gate camera', short: 'Camera', icon: 'camera' },
+  { route: 'comms', label: 'Messages', short: 'Messages', icon: 'sms' },
+  { route: 'stats', label: 'Dashboard', short: 'Stats', icon: 'chart', admin: true },
+  { route: 'zones', label: 'Safety zones', short: 'Zones', icon: 'zone', admin: true },
+  { route: 'people', label: 'People', short: 'People', icon: 'users', admin: true },
+  { route: 'history', label: 'Reports', short: 'Reports', icon: 'note', admin: true },
   { route: 'settings', label: 'Settings', short: 'Settings', icon: 'settings' },
   { route: 'help', label: 'Guide', short: 'Guide', icon: 'help' },
 ];
@@ -122,11 +129,15 @@ export function appPage(opts: {
     timeZone: opts.timeZone,
     staleSeconds: opts.staleSeconds,
   }).replace(/</g, '\\u003c');
-  const navLinks = NAV.map(
-    (n) => `<a href="#/${n.route}" data-route="${n.route}" class="nav-link">${icon(n.icon)}<span class="nav-label">${n.label}</span><span class="nav-short">${n.short}</span>${
-      n.route === 'incidents' ? '<span class="nav-badge" data-badge="unack" hidden></span>' : ''
-    }</a>`,
-  ).join('');
+  const isAdmin = opts.operator.role === 'admin';
+  const navLinks =
+    NAV.filter((n) => !n.admin || isAdmin)
+      .map(
+        (n) => `<a href="#/${n.route}" data-route="${n.route}" class="nav-link"${n.primary ? ' data-primary' : ''}>${icon(n.icon)}<span class="nav-label">${n.label}</span><span class="nav-short">${n.short}</span>${
+          n.route === 'incidents' ? '<span class="nav-badge" data-badge="unack" hidden></span>' : ''
+        }</a>`,
+      )
+      .join('') + `<button type="button" class="nav-link nav-more" aria-expanded="false" aria-controls="sidenav">${icon('overview')}<span class="nav-short">More</span></button>`;
   return layout(
     'Safe Savannah · Duty operations',
     `<a class="skip-link" href="#main">Skip to main content</a>
@@ -141,13 +152,15 @@ export function appPage(opts: {
       <details class="user-menu">
         <summary aria-label="Account menu for ${esc(opts.operator.name)}">${icon('user')}<span class="user-name">${esc(opts.operator.name)}</span>${icon('chevron-down', 'icon icon-sm')}</summary>
         <div class="menu-panel">
-          <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${opts.operator.role === 'supervisor' ? 'Supervisor' : 'Duty officer'}</span></p>
+          <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${opts.operator.role === 'admin' ? 'Admin' : 'Ranger'}</span></p>
+          <label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alert SMS and calls</span></label>
+          <a class="btn btn-ghost btn-block" href="/t" target="_blank" rel="noopener">${icon('external')}<span>Open tourist app</span></a>
           <form method="post" action="/logout"><button type="submit" class="btn btn-ghost btn-block">${icon('logout')}<span>Sign out</span></button></form>
         </div>
       </details>
     </div>
   </header>
-  <nav class="sidenav" aria-label="Main">${navLinks}</nav>
+  <nav class="sidenav" id="sidenav" aria-label="Main">${navLinks}</nav>
   <div class="conn-banner" id="conn-banner" role="alert" hidden></div>
   <main id="main" class="main" tabindex="-1">
     <div class="view-loading"><span class="spinner" aria-hidden="true"></span> Loading…</div>
@@ -157,5 +170,29 @@ export function appPage(opts: {
 <script type="application/json" id="ss-boot">${boot}</script>
 <script type="module" src="/static/js/app.js"></script>`,
     'page-app',
+  );
+}
+
+export function touristPage(opts: { emergencyLine: string }): string {
+  const boot = JSON.stringify({ emergencyLine: opts.emergencyLine }).replace(/</g, '\\u003c');
+  return layout(
+    'Safe Savannah · Traveller safety',
+    `<a class="skip-link" href="#t-main">Skip to main content</a>
+<div class="t-shell">
+  <header class="t-top">
+    <span class="t-brand">${icon('logo', 'logo')}<span>Safe Savannah</span></span>
+    <div class="t-lang" role="group" aria-label="Language / Lugha">
+      <button type="button" data-lang="en" aria-pressed="true">EN</button>
+      <button type="button" data-lang="sw" aria-pressed="false">SW</button>
+    </div>
+  </header>
+  <div class="conn-banner t-conn" id="conn-banner" role="alert" hidden></div>
+  <main id="t-main" class="t-main" tabindex="-1"><div class="view-loading"><span class="spinner" aria-hidden="true"></span> Loading…</div></main>
+  <nav class="t-nav" id="t-nav" aria-label="Main" hidden></nav>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script type="application/json" id="ss-boot">${boot}</script>
+<script type="module" src="/static/js/tourist/app.js"></script>`,
+    'page-tourist',
   );
 }

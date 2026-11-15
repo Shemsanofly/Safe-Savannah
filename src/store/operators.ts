@@ -5,8 +5,8 @@ import { DomainError } from './events.js';
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 
-export type Role = 'officer' | 'supervisor';
-export const ROLES: readonly Role[] = ['officer', 'supervisor'];
+export type Role = 'ranger' | 'admin';
+export const ROLES: readonly Role[] = ['ranger', 'admin'];
 
 export interface Operator {
   id: string;
@@ -22,6 +22,10 @@ export interface SessionOperator extends Operator {
 export interface OperatorRow extends Operator {
   created_at: Date;
   updated_at: Date;
+  phone?: string | null;
+  area_id?: string | null;
+  on_duty?: boolean;
+  demo?: boolean;
 }
 
 export const OPERATOR_ID_RE = /^[a-z0-9_-]{2,32}$/i;
@@ -62,12 +66,12 @@ export async function upsertOperator(db: Queryable, op: { id: string; name: stri
     `INSERT INTO operators (id, name, pin_hash, role) VALUES ($1, $2, $3, $4)
      ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, pin_hash = EXCLUDED.pin_hash, active = true,
        role = COALESCE($5, operators.role), updated_at = now(), sessions_valid_after = now()`,
-    [op.id, name, await hashPin(op.pin), op.role ?? 'officer', op.role ?? null],
+    [op.id, name, await hashPin(op.pin), op.role ?? 'ranger', op.role ?? null],
   );
 }
 
-export async function countActiveSupervisors(db: Queryable): Promise<number> {
-  const r = await db.query<{ n: string }>(`SELECT count(*) AS n FROM operators WHERE active AND role = 'supervisor'`);
+export async function countActiveAdmins(db: Queryable): Promise<number> {
+  const r = await db.query<{ n: string }>(`SELECT count(*) AS n FROM operators WHERE active AND role = 'admin'`);
   return Number(r.rows[0]?.n ?? 0);
 }
 
@@ -95,7 +99,7 @@ export async function getSessionOperator(db: Queryable, id: string): Promise<Ses
 }
 
 export async function listOperators(db: Queryable): Promise<OperatorRow[]> {
-  const r = await db.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at FROM operators ORDER BY active DESC, name');
+  const r = await db.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at, phone, area_id, on_duty, demo FROM operators ORDER BY active DESC, role, name');
   return r.rows;
 }
 
@@ -115,7 +119,7 @@ export async function createOperator(db: Queryable, op: { id: string; name: stri
 
 /**
  * Change name, role or active flag. Refuses changes that would leave nobody able
- * to manage operators, and refuses a supervisor deactivating or demoting themselves.
+ * to manage operators, and refuses an admin deactivating or demoting themselves.
  */
 export async function updateOperator(
   db: Db,
@@ -124,7 +128,7 @@ export async function updateOperator(
   patch: { name?: string; role?: Role; active?: boolean },
 ): Promise<OperatorRow> {
   return withTx(db, async (c) => {
-    // Serialize supervisor changes so two concurrent demotions cannot both pass the guard.
+    // Serialize admin changes so two concurrent demotions cannot both pass the guard.
     await c.query('SELECT pg_advisory_xact_lock(727275)');
     const cur = (await c.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at FROM operators WHERE id = $1 FOR UPDATE', [id])).rows[0];
     if (!cur) throw new DomainError(404, 'not_found', 'Operator not found');
@@ -133,12 +137,12 @@ export async function updateOperator(
       role: patch.role ?? cur.role,
       active: patch.active ?? cur.active,
     };
-    if (id === actorId && (!next.active || next.role !== 'supervisor')) {
+    if (id === actorId && (!next.active || next.role !== 'admin')) {
       throw new DomainError(409, 'self_lockout', 'You cannot deactivate or demote your own account');
     }
-    const losingSupervisor = cur.role === 'supervisor' && cur.active && (next.role !== 'supervisor' || !next.active);
-    if (losingSupervisor && (await countActiveSupervisors(c)) <= 1) {
-      throw new DomainError(409, 'last_supervisor', 'At least one active supervisor is required');
+    const losingAdmin = cur.role === 'admin' && cur.active && (next.role !== 'admin' || !next.active);
+    if (losingAdmin && (await countActiveAdmins(c)) <= 1) {
+      throw new DomainError(409, 'last_admin', 'At least one active admin is required');
     }
     const r = await c.query<OperatorRow>(
       `UPDATE operators SET name = $2, role = $3, active = $4, updated_at = now(),
@@ -157,5 +161,19 @@ export async function setOperatorPin(db: Queryable, id: string, pin: string): Pr
     id,
     await hashPin(pin),
   ]);
+  if (!r.rowCount) throw new DomainError(404, 'not_found', 'Operator not found');
+}
+
+/** Contact and duty details used for alert routing (phone, home area, on duty). */
+export async function setOperatorContact(
+  db: Queryable,
+  id: string,
+  patch: { phone?: string | null; area_id?: string | null; on_duty?: boolean },
+): Promise<void> {
+  const r = await db.query(
+    `UPDATE operators SET phone = CASE WHEN $2 THEN $3 ELSE phone END, area_id = CASE WHEN $4 THEN $5 ELSE area_id END,
+            on_duty = COALESCE($6, on_duty), updated_at = now() WHERE id = $1`,
+    [id, patch.phone !== undefined, patch.phone ?? null, patch.area_id !== undefined, patch.area_id ?? null, patch.on_duty ?? null],
+  );
   if (!r.rowCount) throw new DomainError(404, 'not_found', 'Operator not found');
 }

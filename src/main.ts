@@ -8,9 +8,10 @@ import { createPool } from './db/pool.js';
 import { errMsg, logger } from './log.js';
 import { AfricasTalkingSms } from './notify/africasTalking.js';
 import { MockSms } from './notify/mock.js';
+import { AfricasTalkingVoice, SimulatedVoice } from './notify/voice.js';
 import { OutboxWorker } from './notify/outbox.js';
 
-type Role = 'api' | 'vision' | 'notifier' | 'migrate' | 'all';
+type Role = 'api' | 'vision' | 'notifier' | 'simulator' | 'migrate' | 'all';
 
 function onShutdown(fn: () => Promise<void> | void): AbortSignal {
   const ac = new AbortController();
@@ -61,7 +62,7 @@ async function runNotifier(cfg: AppConfig): Promise<void> {
     cfg.SMS_PROVIDER === 'africastalking'
       ? new AfricasTalkingSms({
           username: cfg.AT_USERNAME,
-          apiKey: cfg.AT_API_KEY!,
+          apiKey: cfg.AT_API_KEY,
           environment: cfg.AT_ENVIRONMENT,
           senderId: cfg.AT_SENDER_ID,
           timeoutMs: cfg.SMS_TIMEOUT_MS,
@@ -74,6 +75,10 @@ async function runNotifier(cfg: AppConfig): Promise<void> {
       recipients: new Map(cfg.recipients.map((r) => [r.alias, r.number])),
       freshnessSeconds: cfg.SMS_FRESHNESS_SECONDS,
       testMode: cfg.SMS_TEST_MODE,
+      voice:
+        cfg.VOICE_PROVIDER === 'africastalking'
+          ? new AfricasTalkingVoice({ username: cfg.AT_USERNAME, apiKey: cfg.AT_API_KEY!, from: cfg.AT_VOICE_NUMBER!, environment: cfg.AT_ENVIRONMENT, timeoutMs: cfg.SMS_TIMEOUT_MS })
+          : new SimulatedVoice(db),
       backoffCapMs: cfg.SMS_RETRY_CAP_SECONDS * 1000,
     },
     log,
@@ -86,12 +91,34 @@ async function runNotifier(cfg: AppConfig): Promise<void> {
   await worker.run(signal, listen);
 }
 
+/** Scripted camera simulator: periodic labelled SIMULATED detections from demo camera stations. */
+async function runSimulator(cfg: AppConfig): Promise<void> {
+  const log = logger('simulator');
+  const db = createPool(cfg.DATABASE_URL, 2);
+  const signal = onShutdown(() => db.end());
+  const { randomTick, simulatorPaused } = await import('./sim/simulator.js');
+  const { messagingOpts } = await import('./api/platformRoutes.js');
+  log.info('simulator started', { intervalSeconds: cfg.SIMULATOR_INTERVAL_SECONDS });
+  while (!signal.aborted) {
+    await new Promise((r) => setTimeout(r, cfg.SIMULATOR_INTERVAL_SECONDS * 1000));
+    if (signal.aborted) break;
+    try {
+      if (await simulatorPaused(db)) continue;
+      const r = await randomTick(db, messagingOpts(cfg));
+      if (r) log.info('simulated detection', { detectionId: r.detectionId, risk: r.risk.level, incident: r.incident?.id ?? null });
+    } catch (err) {
+      log.error('simulator tick failed', { error: errMsg(err) });
+    }
+  }
+}
+
 /** Run each role in its own process so model inference never blocks the dashboard. */
 function supervise(): void {
   const log = logger('supervisor');
   const self = fileURLToPath(import.meta.url);
   const children = new Map<string, ChildProcess>();
   let stopping = false;
+  const cfg = loadConfig();
   const start = (role: Exclude<Role, 'all' | 'migrate'>, delay = 0) => {
     setTimeout(() => {
       if (stopping) return;
@@ -115,6 +142,7 @@ function supervise(): void {
   start('api');
   start('notifier');
   start('vision');
+  if (cfg.SIMULATOR_ENABLED) start('simulator');
 }
 
 async function main(): Promise<void> {
@@ -134,6 +162,8 @@ async function main(): Promise<void> {
       return runVision(cfg);
     case 'notifier':
       return runNotifier(cfg);
+    case 'simulator':
+      return runSimulator(cfg);
     case 'all': {
       const db = createPool(cfg.DATABASE_URL, 1);
       await migrate(db);
@@ -141,7 +171,7 @@ async function main(): Promise<void> {
       return supervise();
     }
     default:
-      throw new Error(`Unknown role "${role}". Use: all | api | vision | notifier | migrate`);
+      throw new Error(`Unknown role "${role}". Use: all | api | vision | notifier | simulator | migrate`);
   }
 }
 

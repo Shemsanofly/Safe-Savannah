@@ -30,7 +30,7 @@ function append(node, children) {
 export function icon(id, cls = 'icon') {
   const svg = el('svg', { class: cls, 'aria-hidden': 'true', focusable: 'false' });
   const use = el('use', {});
-  use.setAttribute('href', `#${id}`);
+  use.setAttribute('href', `#i-${id}`);
   svg.append(use);
   return svg;
 }
@@ -65,9 +65,13 @@ async function request(method, url, body, { signal } = {}) {
     if (err.name === 'AbortError') throw err;
     throw new ApiError(0, 'network', 'Cannot reach the Safe Savannah server. Check the laptop and network, and use your radio procedure meanwhile.');
   }
-  if (res.status === 401) {
+  if (res.status === 401 && !location.pathname.startsWith('/t')) {
     location.href = '/login';
     throw new ApiError(401, 'unauthorized', 'Your session has ended. Please sign in again.');
+  }
+  if (res.status === 401) {
+    const d = await res.json().catch(() => ({}));
+    throw new ApiError(401, d.error || 'unauthorized', d.message || 'Please sign in again.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new ApiError(res.status, data.error || 'error', data.message || `The server returned an error (HTTP ${res.status}).`);

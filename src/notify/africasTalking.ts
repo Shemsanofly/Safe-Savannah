@@ -58,7 +58,8 @@ export function parseAtResponse(httpStatus: number, bodyText: string): SendOutco
 
 export interface AfricasTalkingOptions {
   username: string;
-  apiKey: string;
+  /** Missing key: nothing is sent and the job fails with a clear reason (no silent simulation). */
+  apiKey: string | undefined;
   environment: 'sandbox' | 'live';
   senderId?: string;
   timeoutMs: number;
@@ -77,6 +78,9 @@ export class AfricasTalkingSms implements SmsProvider {
   }
 
   async send(msg: SmsMessage): Promise<SendOutcome> {
+    if (!this.opts.apiKey) {
+      return { kind: 'rejected', detail: "No Africa's Talking API key configured (set AT_API_KEY). Nothing was sent." };
+    }
     const form = new URLSearchParams({ username: this.opts.username, to: msg.to, message: msg.body });
     if (this.opts.senderId) form.set('from', this.opts.senderId);
     const doFetch = this.opts.fetchImpl ?? fetch;

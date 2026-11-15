@@ -2,7 +2,7 @@ import type { Box } from '../domain/types.js';
 import { withTx, type Db, type DbClient, type Queryable } from '../db/pool.js';
 
 export type EventStatus = 'open' | 'acknowledged' | 'closed' | 'false_alert';
-export type EventSource = 'inference' | 'simulated' | 'synthetic';
+export type EventSource = 'inference' | 'simulated' | 'synthetic' | 'report';
 
 export interface EventRow {
   id: number;
@@ -25,6 +25,22 @@ export interface EventRow {
   closed_at: Date | null;
   close_reason: string | null;
   updated_at: Date;
+  // Platform fields (migration 003). camera/zone/class columns are NULL for SOS incidents.
+  kind: 'zone_alert' | 'wildlife' | 'sos';
+  risk_level: 'low' | 'medium' | 'high' | 'critical' | null;
+  area_id: string | null;
+  lat: number | null;
+  lng: number | null;
+  title: string | null;
+  description: string | null;
+  tourist_id: number | null;
+  emergency_type: 'medical' | 'wildlife' | 'vehicle' | 'personal' | null;
+  reporter_phone: string | null;
+  report_channel: 'app' | 'ussd' | 'voice' | null;
+  safety_zone_id: number | null;
+  risk_reasons: string[] | null;
+  detection_id: number | null;
+  demo: boolean;
 }
 
 export interface EventActionRow {
@@ -101,6 +117,13 @@ export async function openEvent(
       if (!existing) throw new Error('Insert conflicted but no active event found');
       return { event: existing, created: false };
     }
+    // Place the gate-camera alert on the map using the camera station's position and area.
+    await c.query(
+      `UPDATE events SET area_id = c.area_id, lat = c.lat, lng = c.lng, risk_level = 'high',
+              title = COALESCE(events.title, initcap(events.class_label) || ' in ' || events.zone_label)
+         FROM cameras c WHERE events.id = $1 AND c.id = events.camera_id`,
+      [event.id],
+    );
     await c.query(
       `INSERT INTO event_actions (event_id, actor, action, note) VALUES ($1, 'system:vision', 'opened', $2)`,
       [event.id, `${input.classLabel} ${(input.confidence * 100).toFixed(0)}% in ${input.zoneLabel} (${input.source})`],
