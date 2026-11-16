@@ -82,23 +82,54 @@ load the demo data.
 
 | Channel | What it does | How it runs here |
 |---|---|---|
-| **SMS** | Ranger alerts (risk ≥ medium), tourist warnings in their language (risk ≥ high), SOS confirmations and status updates | Sent through the **Africa's Talking API**. With `AT_ENVIRONMENT=sandbox`, `AT_USERNAME=sandbox` and your sandbox `AT_API_KEY`, messages appear in the [AT simulator](https://simulator.africastalking.com) for the recipient's number. Nothing is faked in the web app. **Without a key, nothing is sent**: each message shows *"No Africa's Talking API key configured"* on Messages, with a Resend button for after you add the key. |
-| **USSD** | Basic-phone menu: tourists request help (type → park if unregistered → confirm) or check status; ranger phones list alerts and mark "I am responding" | Callback `POST /webhooks/ussd?token=…` (needs a public HTTPS tunnel and `USSD_ENABLED=true`). The **USSD simulator** on Messages runs the same menu locally and is labelled as a simulator. |
-| **Voice** | Calls on-duty rangers for critical wildlife and every SOS; inbound emergency line with a keypad menu | AT's voice sandbox is not operational, so calls are **simulated and labelled** ("no phone rang") unless `VOICE_PROVIDER=africastalking` with a provisioned `AT_VOICE_NUMBER`. Callback: `POST /webhooks/voice?token=…`. The **Voice line simulator** plays the inbound menu. |
+| **SMS** | Ranger alerts (risk ≥ medium), tourist warnings in their language (risk ≥ high), SOS confirmations and status updates | Sent through the **Africa's Talking API**. With `AT_ENVIRONMENT=sandbox`, `AT_USERNAME=sandbox` and your sandbox `AT_API_KEY`, messages appear in the [AT simulator](https://simulator.africastalking.com) for the recipient's number. **Without a key, nothing is sent**: the notifier logs a warning and records failed sends in the notification outbox. |
+| **USSD** | Basic-phone menu: tourists request help (type → park if unregistered → confirm) or check status; ranger phones list alerts and mark "I am responding" | Callback `POST /webhooks/ussd?token=…` needs a public HTTPS tunnel and `USSD_ENABLED=true`. Dial your sandbox channel in the AT simulator. |
+| **Voice** | Calls on-duty rangers for critical wildlife and every SOS; inbound emergency line with a keypad menu | Calls are **simulated and labelled** ("no phone rang") with `VOICE_PROVIDER=simulated`. Live calls require `VOICE_PROVIDER=africastalking` and a provisioned `AT_VOICE_NUMBER`. Callback: `POST /webhooks/voice?token=…`. |
 
 Sandbox set-up:
 
-1. Create an Africa's Talking account and open the sandbox app.
-2. Generate an API key.
-3. Put it in `.env` as `AT_API_KEY=…`, keeping `SMS_PROVIDER=africastalking`, `AT_ENVIRONMENT=sandbox` and
-   `AT_USERNAME=sandbox`.
-4. Restart the app.
-5. Open the AT simulator with a ranger's or tourist's number, for example `+255754000101` (Juma) or
-   `+255765000201` (Emma).
-6. Trigger a scenario or an SOS. The SMS appears on the simulated phone.
+1. Open the [Africa's Talking sandbox app](https://account.africastalking.com/apps/sandbox).
+   Under **Settings → API Key**, generate a sandbox key and save it in the project's `.env`.
+2. Use these settings (replace the two placeholders with your key and a random token):
 
-From this development container, a request with a placeholder key reached `api.sandbox.africastalking.com`
-and came back `401` (authentication). The integration is live and only needs your key.
+   ```dotenv
+   SMS_PROVIDER=africastalking
+   AT_ENVIRONMENT=sandbox
+   AT_USERNAME=sandbox
+   AT_API_KEY=<your-sandbox-api-key>
+   SMS_TEST_MODE=true
+   USSD_ENABLED=true
+   WEBHOOK_HOST=127.0.0.1
+   WEBHOOK_PORT=8081
+   WEBHOOK_TOKEN=<random-token-at-least-16-characters>
+   ```
+
+   Keep `.env` private; it is excluded from Git. Leave `AT_SENDER_ID` empty for the initial test.
+3. Run `npm run dev`. On Windows PowerShell, use `npm.cmd run dev` if script execution policy blocks `npm`.
+   Restart after editing `.env`. This starts both the API and the notifier that sends queued SMS.
+   For testing communications without the camera worker, run `npm run api` and `npm run notifier`
+   in separate terminals after migrations have been applied.
+4. In another terminal run `ngrok http 8081`. Keep it running. Use the HTTPS forwarding address
+   as `<tunnel>` below; expose the webhook listener on **8081**, not the dashboard on 8080.
+5. In the sandbox's **USSD** section, create a channel and set its **Callback URL** to
+   `https://<tunnel>/webhooks/ussd?token=<WEBHOOK_TOKEN>`, using the exact token from `.env`.
+   Use the dial code assigned by the dashboard in the simulator.
+6. In the sandbox's **SMS** delivery-report settings, set the callback to
+   `https://<tunnel>/webhooks/sms-status?token=<WEBHOOK_TOKEN>`.
+   These URLs contain your private webhook token; share them only with the provider.
+7. Open the [AT simulator](https://simulator.africastalking.com) with a seeded ranger's or tourist's
+   number: `+255754000101` (Juma) or `+255765000201` (Emma). Sandbox interactions appear in the
+   simulator, not on real handsets. See the [provider's sandbox guide](https://help.africastalking.com/en/articles/1170660-how-do-i-get-started-on-the-africa-s-talking-sandbox).
+8. As Emma, dial your USSD channel. Check **My emergency status**, then **Request emergency help**
+   → type → confirm. The SOS should appear in the ranger console and its confirmation SMS in
+   Emma's simulated inbox. As Juma, dial the same code to list alerts and respond; Emma should
+   receive the status update. These numbers must exist in your seeded database (`npm run seed`).
+
+If the tunnel address changes, update both callbacks in Africa's Talking. A `403` response means
+the callback token is missing or incorrect; `404` on the USSD callback means USSD is disabled
+or the URL is wrong. For SMS authentication failures, check that the key came from the sandbox
+app and that `AT_USERNAME=sandbox`. After adding a missing key, create a fresh test event:
+previously rejected or expired jobs are not automatically sent again.
 
 ## How risk is decided (`src/domain/risk.ts`)
 
@@ -354,9 +385,10 @@ contact real emergency services from a demo.
 HTTPS tunnel, and register `https://<tunnel>/webhooks/sms-status?token=<WEBHOOK_TOKEN>` with Africa's Talking.
 Delivery reports update notification state only. They never change who owns the incident.
 
-**USSD (stretch goal):** set `USSD_ENABLED=true` and `USSD_ALLOWLIST=+2557XXXXXXXX:duty1`, then point the
-callback to `/webhooks/ussd?token=...`. The menu is: `1` lists active alerts; `2` → alert number → review →
-`1` to confirm the acknowledgement. Nothing is written before that confirmation. USSD cannot push alerts.
+**USSD:** follow the sandbox setup above. Ranger phone numbers are recognised from their active accounts;
+`USSD_ALLOWLIST=+2557XXXXXXXX:duty1` can map an additional phone to an existing ranger. Their menu is:
+`1` lists active alerts; `2` → alert number → review → `1` confirms the response. Other phones receive
+the tourist help/status menu. Nothing is written before confirmation. USSD cannot push alerts.
 
 ## Using the dashboard
 
