@@ -177,14 +177,29 @@ document.addEventListener('keydown', (e) => {
 
 // On-duty toggle (rangers on duty receive alerts).
 const duty = document.getElementById('duty-toggle');
+function showDuty(on) {
+  const chip = document.querySelector('[data-duty-chip]');
+  const dot = document.querySelector('[data-duty-dot]');
+  if (chip) {
+    chip.hidden = false;
+    chip.textContent = on ? 'On duty' : 'Off duty';
+    chip.classList.toggle('is-on', on);
+  }
+  if (dot) {
+    dot.hidden = false;
+    dot.classList.toggle('is-on', on);
+  }
+}
 if (duty) {
   api.get('/api/me').then((me) => {
     duty.checked = !!me.operator.on_duty;
+    showDuty(duty.checked);
     if (!me.operator.phone) duty.parentElement.title = 'No phone number on your account — ask an admin to add one.';
   }).catch(() => undefined);
   duty.addEventListener('change', async () => {
     try {
       await api.patch('/api/me', { on_duty: duty.checked });
+      showDuty(duty.checked);
       toast(duty.checked ? 'You are on duty and will receive alerts.' : 'You are off duty. Alerts go to other rangers.');
     } catch (err) {
       duty.checked = !duty.checked;

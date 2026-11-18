@@ -131,14 +131,14 @@ export function appPage(opts: {
     `<a class="skip-link" href="#main">Skip to main content</a>
 <div class="shell">
   <header class="topbar">
-    <a class="brand" href="#/overview" aria-label="Safe Savannah overview">${icon('logo', 'logo')}<span class="brand-name">Safe Savannah</span></a>
+    <a class="brand" href="#/ops" aria-label="Safe Savannah live map">${icon('logo', 'logo')}<span class="brand-name">Safe Savannah</span></a>
     <div class="status-strip" id="status-strip" aria-live="polite" aria-label="System status">
       <span class="pill pill-muted"><span class="spinner" aria-hidden="true"></span>Loading status…</span>
     </div>
     <div class="topbar-right">
       <span class="updated muted small" id="updated" aria-live="off">Connecting…</span>
       <details class="user-menu">
-        <summary aria-label="Account menu for ${esc(opts.operator.name)}">${icon('user')}<span class="user-name">${esc(opts.operator.name)}</span>${icon('chevron-down', 'icon icon-sm')}</summary>
+        <summary aria-label="Account menu for ${esc(opts.operator.name)}"><span class="user-avatar">${icon('user')}<span class="duty-dot" data-duty-dot hidden></span></span><span class="user-name">${esc(opts.operator.name)}</span><span class="duty-chip" data-duty-chip hidden></span>${icon('chevron-down', 'icon icon-sm')}</summary>
         <div class="menu-panel">
           <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${opts.operator.role === 'admin' ? 'Admin' : 'Ranger'}</span></p>
           <label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alerts</span></label>

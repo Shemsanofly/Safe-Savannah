@@ -1,6 +1,6 @@
 // Incidents: search, filter, sort and page through current and historical incidents.
 import { api, BOOT, clear, debounce, el, fmtDateTime, fmtDuration, icon, qs, toast } from '../lib.js';
-import { demoBadge, incidentBadge, kindBadge, riskBadge, sourceBadge } from '../status.js';
+import { incidentBadge, incidentItem, KIND, RISK } from '../status.js';
 
 const STATUS_TABS = [
   { value: '', label: 'All' },
@@ -25,7 +25,7 @@ export function mount(main, ctx) {
   let controller = null;
 
   // ---------- controls (built once; never re-rendered by refreshes) ----------
-  const search = el('input', { type: 'search', id: 'f-q', placeholder: 'SS-014, place, species, ranger, tourist phone or note', autocomplete: 'off', value: params.q || '' });
+  const search = el('input', { type: 'search', id: 'f-q', placeholder: 'Search SS-014, place, animal, ranger…', autocomplete: 'off', value: params.q || '', 'aria-label': 'Search incidents' });
   const statusSeg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Incident status' });
   const risk = select('f-risk', [['', 'Any risk'], ['critical', 'Critical'], ['high', 'High'], ['medium', 'Medium'], ['high,critical', 'High or critical']], params.risk);
   const areaSel = select('f-area', [['', 'All areas']], params.area);
@@ -38,15 +38,19 @@ export function mount(main, ctx) {
   const dateError = el('p', { class: 'field-error', hidden: true, role: 'alert' });
 
   // On phones the less-used filters fold away; on larger screens they are always shown.
-  const moreSummary = el('summary', {}, icon('filter', 'icon icon-sm'), el('span', {}, 'More filters'));
+  const moreSummary = el('summary', {}, icon('filter', 'icon icon-sm'), el('span', {}, 'Filters & sort'));
   const moreFilters = el('details', { class: 'more-filters', open: window.matchMedia('(min-width: 721px)').matches || undefined },
     moreSummary,
+    el('div', { class: 'filters-row' }, kindSeg),
     el('div', { class: 'filters-row' },
+      field('f-sort', 'Sort', sort),
       field('f-area', 'Area', areaSel),
       field('f-risk', 'Risk', risk),
       field('f-from', 'Opened from', from),
       field('f-to', 'Opened to', to),
-      el('div', { class: 'field shrink' }, el('span', { class: 'label', 'aria-hidden': 'true' }, ' '), reset)));
+      el('div', { class: 'field shrink' }, el('span', { class: 'label', 'aria-hidden': 'true' }, '\u00a0'), reset)));
+  from.title = `Lodge time (${BOOT.timeZone}); includes the whole day`;
+  to.title = from.title;
 
   const exportBtn = BOOT.permissions?.canExport
     ? el('a', { class: 'btn', href: '#', download: '' }, icon('download'), el('span', {}, 'Export CSV'))
@@ -62,13 +66,10 @@ export function mount(main, ctx) {
       el('div', {}, el('h1', {}, 'Incidents'), el('p', { class: 'sub' }, 'Every alert and emergency, current and past.')),
       el('div', { class: 'page-actions' }, exportBtn)),
     el('form', { class: 'filters', role: 'search', 'aria-label': 'Filter incidents', onsubmit: (e) => e.preventDefault() },
-      el('div', { class: 'filters-row' },
-        el('div', { class: 'field grow' }, el('label', { for: 'f-q' }, 'Search'), el('div', { class: 'input-icon' }, icon('search'), search)),
-        field('f-sort', 'Sort', sort)),
-      el('div', { class: 'filters-row' }, kindSeg, statusSeg),
+      el('div', { class: 'input-icon' }, icon('search'), search),
+      el('div', { class: 'chip-scroll' }, statusSeg),
       moreFilters,
-      dateError,
-      el('p', { class: 'hint' }, `Dates are in lodge time (${BOOT.timeZone}) and include the whole day.`)),
+      dateError),
     resultBar, loadingLine, results, el('div', { class: 'row between' }, pageSize, pager),
   );
   pageSize.setAttribute('aria-label', 'Results per page');
@@ -155,8 +156,8 @@ export function mount(main, ctx) {
     const first = data.total === 0 ? 0 : (data.page - 1) * data.pageSize + 1;
     const last = Math.min(data.total, data.page * data.pageSize);
     const active = activeFilterCount();
-    const hidden = ['area', 'risk', 'from', 'to'].filter((k) => params[k]).length;
-    moreSummary.lastChild.textContent = hidden ? `More filters (${hidden} active)` : 'More filters';
+    const hidden = ['kind', 'area', 'risk', 'from', 'to'].filter((k) => params[k]).length;
+    moreSummary.lastChild.textContent = hidden ? `Filters & sort (${hidden} on)` : 'Filters & sort';
     clear(resultBar,
       el('p', { class: 'strong' }, data.total === 0 ? 'No incidents' : `Showing ${first}–${last} of ${data.total} incident${data.total === 1 ? '' : 's'}`),
       active ? el('span', { class: 'muted small' }, `${active} filter${active === 1 ? '' : 's'} applied`) : null);
@@ -181,7 +182,10 @@ export function mount(main, ctx) {
           el('a', { href: `#/incidents/${i.id}`, class: 'strong' }, i.ref),
           el('span', { class: 'small' }, i.title || i.zone_label || ''),
           el('span', { class: 'muted small' }, i.area_name || ''))),
-        el('td', { 'data-label': 'Type' }, el('div', { class: 'cell-stack' }, kindBadge(i.kind), riskBadge(i.risk_level), i.source === 'simulated' || i.source === 'synthetic' ? sourceBadge(i.source) : null, i.demo ? demoBadge() : null)),
+        el('td', { 'data-label': 'Type' }, el('div', { class: 'cell-stack' },
+          el('span', { class: 'strong' }, i.kind === 'sos' ? 'SOS' : KIND[i.kind]?.label || i.kind),
+          i.kind !== 'sos' && i.risk_level ? el('span', { class: `small risk-text lv-${i.risk_level}` }, RISK[i.risk_level]?.label || i.risk_level) : null,
+          i.source === 'simulated' || i.source === 'synthetic' || i.demo ? el('span', { class: 'small inc-tag' }, i.demo ? 'Demo' : 'Simulated') : null)),
         el('td', { 'data-label': 'Status' }, incidentBadge(i.status)),
         el('td', { 'data-label': 'Opened' }, el('div', { class: 'cell-stack' }, fmtDateTime(i.opened_at),
           i.class_label ? el('span', { class: 'muted small' }, `Peak ${Math.round((i.confidence || 0) * 100)}% ${i.class_label}`) : i.report_channel ? el('span', { class: 'muted small' }, `via ${i.report_channel.toUpperCase()}`) : null)),
@@ -195,7 +199,9 @@ export function mount(main, ctx) {
       });
       return tr;
     });
-    clear(results, el('div', { class: 'table-wrap' }, el('table', { class: 'data table-cards' },
+    // Phones get compact cards; wider screens get the table. Both are rendered; CSS shows one.
+    const cards = el('div', { class: 'inc-list' }, data.items.map((i) => incidentItem(i, { when: fmtDateTime(i.opened_at) })));
+    clear(results, cards, el('div', { class: 'table-wrap inc-table' }, el('table', { class: 'data table-cards' },
       el('caption', { class: 'sr-only' }, 'Incidents matching the filters'),
       el('thead', {}, el('tr', {}, ['Incident', 'Type', 'Status', 'Opened', 'Responder'].map((h) => el('th', { scope: 'col' }, h)))),
       el('tbody', {}, rows))));

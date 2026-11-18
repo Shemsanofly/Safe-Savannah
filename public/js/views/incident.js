@@ -1,7 +1,7 @@
 // Incident detail: evidence, ownership, actions, SMS history and a chronological activity log.
 import { age, api, BOOT, clear, confirmDialog, el, fmtDateTime, fmtDuration, fmtTime, icon, initials, runAction, uid, validateRequired } from '../lib.js';
 import {
-  ACTION, CHANNEL, EMERGENCY, INCIDENT, SMS, demoBadge, incidentBadge, kindBadge, riskBadge, sourceBadge, SOURCE,
+  ACTION, CHANNEL, EMERGENCY, INCIDENT, KIND, RISK, SMS, demoBadge, SOURCE,
 } from '../status.js';
 import { createMap } from '../map.js';
 import * as store from '../store.js';
@@ -46,7 +46,7 @@ export function mount(main, ctx) {
           el('div', { class: 'panel-body' }, timeline))),
       el('div', { class: 'stack' },
         el('section', { class: 'panel', 'aria-labelledby': 'act-title' },
-          el('div', { class: 'panel-head' }, el('h2', { id: 'act-title' }, icon('user'), 'Ownership & actions')),
+          el('div', { class: 'panel-head' }, el('h2', { id: 'act-title' }, icon('user'), 'Response')),
           el('div', { class: 'panel-body' }, actionPanel)))),
 
   );
@@ -68,6 +68,7 @@ export function mount(main, ctx) {
       }
       if (!data) {
         explainer.className = 'status-explainer tone-urgent';
+        explainer.hidden = false;
         clear(explainer, icon('alert'), el('div', {}, el('strong', {}, 'Could not load this incident. '), err.message,
           el('p', { class: 'small' }, 'This page retries automatically every few seconds.')));
       }
@@ -79,21 +80,32 @@ export function mount(main, ctx) {
     const def = INCIDENT[e.status];
     const active = e.status === 'open' || e.status === 'acknowledged';
     grid.classList.toggle('is-active', active);
+    const lvl = e.kind === 'sos' ? 'critical' : e.risk_level || 'none';
+    const em = e.emergency_type ? EMERGENCY[e.emergency_type] : null;
+    const order = { open: 0, acknowledged: 1, closed: 2, false_alert: 2 }[e.status];
+    const owner = e.acknowledged_by_name || e.acknowledged_by;
+    const steps = [
+      ['Pending', e.opened_at],
+      [order >= 1 && owner ? `${owner.split(' ')[0]} responding` : 'Responding', e.acknowledged_at],
+      [e.status === 'false_alert' ? 'False alarm' : 'Resolved', e.closed_at],
+    ];
     clear(head,
-      el('div', {},
-        el('h1', {}, `${e.ref} · ${e.title || e.zone_label || 'Incident'}`),
-        el('div', { class: 'row', style: null }, kindBadge(e.kind, { pill: true }), riskBadge(e.risk_level, { pill: true }), incidentBadge(e.status, { pill: true }),
-          sourceBadge(e.source, { pill: true }), e.demo ? demoBadge() : null,
-          el('span', { class: 'muted small' }, `${e.area_name ? `${e.area_name} · ` : ''}Opened ${fmtDateTime(e.opened_at)}${active ? ` · ${age(e.opened_at)} ago` : ''}`))),
-      el('ol', { class: 'status-steps', 'aria-label': 'Incident status' },
-        [['open', 'Pending'], ['acknowledged', 'Responding'], ['closed', 'Resolved']].map(([k, l], i) => {
-          const order = { open: 0, acknowledged: 1, closed: 2, false_alert: 2 }[e.status];
-          return el('li', { class: order === i ? 'is-current' : order > i ? 'is-done' : '', 'aria-current': order === i ? 'step' : null }, l);
-        })));
+      el('div', { class: `inc-head lv-${lvl}` },
+        el('span', { class: 'inc-icon', 'aria-hidden': 'true' }, icon(em?.icon || KIND[e.kind]?.icon || 'incident')),
+        el('div', { class: 'inc-head-text' },
+          el('div', { class: 'inc-meta' }, el('strong', {}, e.ref),
+            el('span', {}, e.kind === 'sos' ? `SOS${em ? ` · ${em.label}` : ''}` : KIND[e.kind]?.label || e.kind),
+            e.kind !== 'sos' && e.risk_level ? el('span', { class: `risk-text lv-${e.risk_level}` }, RISK[e.risk_level]?.label) : null,
+            e.source === 'simulated' || e.source === 'synthetic' ? el('span', { class: 'inc-tag', title: SOURCE[e.source].explain }, 'Simulated — not a real animal') : null,
+            e.demo ? el('span', { class: 'inc-tag' }, 'Demo') : null),
+          el('h1', {}, e.title || e.zone_label || 'Incident'),
+          el('p', { class: 'inc-when' }, `${e.area_name ? `${e.area_name} · ` : ''}opened ${fmtDateTime(e.opened_at)}${active ? ` (${age(e.opened_at)} ago)` : ''}`))),
+      el('ol', { class: `t-progress inc-progress st-${e.status}`, 'aria-label': `Status: ${def.label}` }, steps.map(([l, at], i) =>
+        el('li', { class: i < order || order === 2 ? 'is-done' : i === order ? 'is-current' : '', 'aria-current': i === order ? 'step' : null },
+          el('span', { class: 't-dot' }, i < order || order === 2 ? icon('check', 'icon icon-sm') : null),
+          el('span', { class: 't-progress-label' }, l, at && i <= order ? el('small', {}, fmtDateTime(at).replace(/^Today /, '')) : null)))));
     document.title = `${e.ref} · Safe Savannah`;
-    explainer.className = `status-explainer tone-${def.tone === 'urgent' ? 'urgent' : def.tone}`;
-    clear(explainer, icon(def.icon), el('div', {}, el('strong', {}, def.label), el('p', { class: 'small' }, def.explain),
-      e.source !== 'inference' ? el('p', { class: 'small' }, SOURCE[e.source].explain) : null));
+    explainer.hidden = true;
 
     const evKey = JSON.stringify([e.status, e.last_seen_at, e.confidence, e.acknowledged_at, e.snapshotUrl, data.cameraLabel, e.risk_level]);
     if (evKey !== lastEvKey) {
@@ -136,8 +148,8 @@ export function mount(main, ctx) {
           el('p', {}, 'The image file may have been removed from this laptop. The rest of the record is intact.'))));
         snap.append(el('a', { href: e.snapshotUrl, target: '_blank', rel: 'noopener', 'aria-label': `Open the ${e.ref} image full size` }, img));
       } else {
-        snap.append(el('div', { class: 'empty' }, icon('image-off'), el('strong', {}, 'No image for this incident'),
-          el('p', {}, e.source === 'simulated' ? 'Simulated detections have no camera image.' : e.source === 'synthetic' ? 'Test incidents are created without a camera image.' : 'No image was saved when this alert opened.')));
+        snap.classList.add('is-none');
+        snap.append(icon('image-off', 'icon icon-sm'), el('span', {}, e.source === 'simulated' ? 'No photo — simulated detection.' : e.source === 'synthetic' ? 'No photo — test incident.' : 'No photo was saved for this alert.'));
       }
       const d = data.detection;
       parts.push(snap, el('dl', { class: 'facts' },
@@ -151,9 +163,9 @@ export function mount(main, ctx) {
         respond,
         BOOT.permissions?.canViewTechnical && e.model ? fact('Model', e.model) : null));
       const reasons = e.risk_reasons || d?.risk_reasons;
-      if (reasons?.length) parts.push(el('div', { class: 'stack' }, el('h3', {}, 'Why this risk level'), el('ul', { class: 'reasons' }, reasons.map((r) => el('li', {}, r)))));
+      if (reasons?.length) parts.push(el('div', { class: 'stack detail-block' }, el('h3', {}, 'Why this risk level'), el('ul', { class: 'reasons' }, reasons.map((r) => el('li', {}, r)))));
     }
-    if (e.lat !== null && e.lng !== null) parts.push(el('h3', {}, 'Location'), mapBox);
+    if (e.lat !== null && e.lng !== null) parts.push(el('div', { class: 'stack detail-block' }, el('h3', {}, 'Location'), mapBox));
     clear(evidence, ...parts);
     if (e.lat !== null && e.lng !== null) drawMiniMap(mapBox, e);
   }
@@ -186,7 +198,7 @@ export function mount(main, ctx) {
     updateOwner(e);
 
     if (e.status === 'open') {
-      const btn = el('button', { type: 'button', class: 'btn btn-urgent btn-lg btn-block' }, icon('user'), el('span', {}, "I'm responding — take ownership"));
+      const btn = el('button', { type: 'button', class: 'btn btn-urgent btn-lg btn-block' }, icon('user'), el('span', {}, "I'm responding"));
       const status = el('p', { class: 'form-status', 'aria-live': 'polite' });
       btn.addEventListener('click', () => runAction(btn, status, async () => {
         const r = await api.post(`/api/incidents/${e.id}/status`, { status: 'responding' });
@@ -195,7 +207,7 @@ export function mount(main, ctx) {
       }, { success: `You are responding to ${e.ref}. Verify, coordinate by radio, and log handoffs.` }));
       actionPanel.append(btn, status, el('p', { class: 'hint' }, e.kind === 'sos'
         ? 'The reporter gets an SMS that a ranger is responding. Call them if you can.'
-        : 'Marks the incident as Responding with you as owner. It does not mean the situation is handled.'));
+        : 'You become the owner. Verify on the ground and coordinate by radio.'));
       return;
     }
 

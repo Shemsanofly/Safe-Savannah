@@ -1,7 +1,7 @@
 // Operations: live map + prioritised incident queue for rangers.
 import { createMap, legend } from '../map.js';
-import { age, api, BOOT, clear, el, fmtTime, icon, qs, runAction, toast } from '../lib.js';
-import { EMERGENCY, incidentBadge, kindBadge, riskBadge, demoBadge } from '../status.js';
+import { api, BOOT, clear, el, icon, qs, runAction, toast } from '../lib.js';
+import { incidentItem } from '../status.js';
 import * as store from '../store.js';
 
 const RANK = { critical: 4, high: 3, medium: 2, low: 1 };
@@ -20,27 +20,44 @@ export function mount(main, ctx) {
 
   const areaSel = el('select', { id: 'ops-area', 'aria-label': 'Area' }, el('option', { value: '' }, 'All areas'));
   const kindSeg = el('div', { class: 'seg', role: 'group', 'aria-label': 'Incident type' });
-  const detBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': 'true' }, icon('paw', 'icon icon-sm'), 'Detections (6 h)');
-  const soundBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': 'false', title: 'Play a short tone when a new SOS or critical alert arrives' }, icon('siren', 'icon icon-sm'), 'Alert sound');
+  const detBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': 'true', title: 'Show animal sightings from the last 6 hours' }, icon('paw', 'icon icon-sm'), 'Sightings');
+  const soundBtn = el('button', { type: 'button', class: 'btn btn-sm', 'aria-pressed': 'false', title: 'Play a short tone when a new SOS or critical alert arrives' }, icon('siren', 'icon icon-sm'), 'Sound');
+  // Phones show the list or the map, one at a time; larger screens show both.
+  let view = 'list';
+  const viewSeg = el('div', { class: 'seg ops-view-seg', role: 'group', 'aria-label': 'Show' });
+  const grid = el('div', { class: 'ops-grid show-list' });
   const mapBox = el('div', {});
   const queue = el('div', { class: 'queue-list', 'aria-live': 'polite' });
   const queueCount = el('span', { class: 'muted small' });
   const scenarioBox = el('div', {});
 
+  grid.append(
+    el('section', { class: 'panel ops-map', 'aria-labelledby': 'map-title' },
+      el('div', { class: 'panel-head' }, el('h2', { id: 'map-title' }, icon('map'), 'Map'), el('div', { class: 'row' }, detBtn, soundBtn)),
+      el('div', { class: 'panel-body' }, mapBox, legend())),
+    el('section', { class: 'panel queue', 'aria-labelledby': 'q-title' },
+      el('div', { class: 'panel-head' }, el('h2', { id: 'q-title' }, icon('incident'), 'Active incidents'), queueCount),
+      el('div', { class: 'panel-body stack' }, kindSeg, queue)));
   main.append(
-    el('div', { class: 'page-head' },
+    el('div', { class: 'page-head ops-head' },
       el('div', {}, el('h1', {}, 'Live map'), el('p', { class: 'sub' }, 'Open alerts and emergencies.')),
       el('div', { class: 'page-actions' }, areaSel)),
     el('div', { class: 'radio-reminder' }, icon('radio'), el('span', {}, el('strong', {}, 'Radio first. '), 'Always verify alerts on the ground.')),
-    el('div', { class: 'ops-grid' },
-      el('section', { class: 'panel', 'aria-labelledby': 'map-title' },
-        el('div', { class: 'panel-head' }, el('h2', { id: 'map-title' }, icon('map'), 'Map'), el('div', { class: 'row' }, detBtn, soundBtn)),
-        el('div', { class: 'panel-body' }, mapBox, legend())),
-      el('section', { class: 'panel queue', 'aria-labelledby': 'q-title' },
-        el('div', { class: 'panel-head' }, el('h2', { id: 'q-title' }, icon('incident'), 'Active incidents'), queueCount),
-        el('div', { class: 'panel-body stack' }, kindSeg, queue))),
-    scenarioBox,
+    viewSeg, grid, scenarioBox,
   );
+
+  function renderViewSeg(count) {
+    clear(viewSeg, [['list', 'incident', count === undefined ? 'Incidents' : `Incidents (${count})`], ['map', 'map', 'Map']].map(([v, ic, l]) =>
+      el('button', { type: 'button', 'aria-pressed': String(view === v), onclick: () => {
+        view = v;
+        grid.classList.toggle('show-list', v === 'list');
+        grid.classList.toggle('show-map', v === 'map');
+        renderViewSeg(count);
+        // The map was laid out while hidden: resize it and re-fit the area now that it is visible.
+        if (v === 'map') requestAnimationFrame(() => { mapApi?.map.invalidateSize(); fitArea(); });
+      } }, icon(ic, 'icon icon-sm'), l)));
+  }
+  renderViewSeg();
   clear(queue, el('div', { class: 'view-loading' }, el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Loading…'));
 
   function renderKindSeg() {
@@ -83,16 +100,19 @@ export function mount(main, ctx) {
     }
   }
 
+  function fitArea() {
+    if (!mapApi || !data) return;
+    const pts = data.zones.flatMap((z) => z.geometry).concat(data.cameras.filter((c) => c.lat !== null && (!area || c.area_id === area)).map((c) => [c.lat, c.lng]));
+    if (pts.length) mapApi.fitTo(pts);
+  }
+
   function draw(force = false) {
     if (!mapApi || !data) return;
     const zk = JSON.stringify([area, data.zones.map((z) => z.id + z.updated_at)]);
     if (zk !== zonesKey || force) {
       mapApi.drawZones(data.zones);
       mapApi.drawCameras(data.cameras.filter((c) => !area || c.area_id === area));
-      if (zk !== zonesKey) {
-        const pts = data.zones.flatMap((z) => z.geometry).concat(data.cameras.filter((c) => c.lat !== null && (!area || c.area_id === area)).map((c) => [c.lat, c.lng]));
-        if (area || !zonesKey) mapApi.fitTo(pts);
-      }
+      if (zk !== zonesKey && (area || !zonesKey)) fitArea();
       zonesKey = zk;
     }
     mapApi.drawDetections(showDetections ? data.detections : []);
@@ -103,6 +123,7 @@ export function mount(main, ctx) {
     if (!data) return;
     const list = data.incidents.filter((i) => !kind || i.kind === kind).sort((a, b) => priority(b) - priority(a) || Date.parse(b.opened_at) - Date.parse(a.opened_at));
     queueCount.textContent = `${list.length} active`;
+    renderViewSeg(list.length);
     // New urgent incidents: toast (+ optional tone).
     const urgent = data.incidents.filter((i) => i.status === 'open' && (i.kind === 'sos' || i.risk_level === 'critical'));
     if (seen) {
@@ -118,21 +139,18 @@ export function mount(main, ctx) {
       return;
     }
     clear(queue, list.map((i) => {
-      const respond = el('button', { type: 'button', class: `btn btn-sm ${i.kind === 'sos' || i.risk_level === 'critical' ? 'btn-urgent' : 'btn-primary'}` }, icon('user', 'icon icon-sm'), el('span', {}, "I'm responding"));
-      const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
-      respond.addEventListener('click', () => runAction(respond, status, async () => {
-        const r = await api.post(`/api/incidents/${i.id}/status`, { status: 'responding' });
-        if (r.alreadyResponding) throw new Error(`${r.event.acknowledged_by} is already responding.`);
-        await Promise.all([load(), store.refresh()]);
-      }, { success: `You are responding to ${i.ref}. Coordinate by radio.` }));
-      const em = i.emergency_type ? EMERGENCY[i.emergency_type] : null;
-      return el('article', { class: `q-item r-${i.risk_level || 'none'} ${i.kind === 'sos' ? 'is-sos' : ''} ${i.status === 'open' ? 'is-open' : ''}` },
-        el('div', { class: 'row' }, el('a', { href: `#/incidents/${i.id}`, class: 'inc-ref' }, i.ref), kindBadge(i.kind), riskBadge(i.risk_level), incidentBadge(i.status),
-          i.source === 'simulated' ? el('span', { class: 'badge tone-sim' }, icon('flask'), 'Simulated') : null, i.demo ? demoBadge() : null),
-        el('p', { class: 'q-title' }, em ? [icon(em.icon, 'icon icon-sm'), ' '] : null, i.title || i.zone_label || 'Incident'),
-        el('p', { class: 'small muted' }, `${data.areas.find((a) => a.id === i.area_id)?.name || 'Area unknown'} · opened ${fmtTime(i.opened_at, false)} (${age(i.opened_at)} ago)${i.report_channel ? ` · via ${i.report_channel.toUpperCase()}` : ''}`),
-        i.acknowledged_by_name ? el('p', { class: 'small strong' }, icon('user', 'icon icon-sm'), ` ${i.acknowledged_by_name} is responding`) : null,
-        el('div', { class: 'row' }, i.status === 'open' ? respond : null, el('a', { class: 'btn btn-sm', href: `#/incidents/${i.id}` }, 'Details', icon('chevron-right', 'icon icon-sm')), status));
+      let actions = null;
+      if (i.status === 'open') {
+        const respond = el('button', { type: 'button', class: `btn btn-sm ${i.kind === 'sos' || i.risk_level === 'critical' ? 'btn-urgent' : 'btn-primary'}` }, icon('user', 'icon icon-sm'), el('span', {}, "I'm responding"));
+        const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
+        respond.addEventListener('click', () => runAction(respond, status, async () => {
+          const r = await api.post(`/api/incidents/${i.id}/status`, { status: 'responding' });
+          if (r.alreadyResponding) throw new Error(`${r.event.acknowledged_by} is already responding.`);
+          await Promise.all([load(), store.refresh()]);
+        }, { success: `You are responding to ${i.ref}. Coordinate by radio.` }));
+        actions = [respond, status];
+      }
+      return incidentItem(i, { areaName: area ? null : data.areas.find((a) => a.id === i.area_id)?.name, actions });
     }));
   }
 

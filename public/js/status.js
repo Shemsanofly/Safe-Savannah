@@ -1,5 +1,5 @@
 // Plain-language vocabulary for every status in the system, and the badges that show them.
-import { el, icon, fmtTime, until } from './lib.js';
+import { age, el, icon, fmtTime, until } from './lib.js';
 
 export const INCIDENT = {
   open: { label: 'Pending', short: 'Pending', tone: 'urgent', icon: 'incident',
@@ -128,4 +128,30 @@ export function smsActionHint(j) {
   if (j.status === 'expired') return 'If the elephant may still be there, coordinate by radio; resend only if the alert is still relevant.';
   if (j.status === 'retry_wait') return 'Nothing to do — it retries automatically. Meanwhile, use radio for anything urgent.';
   return null;
+}
+
+/**
+ * Compact incident card used by the live queue and the phone incident list:
+ * icon · ref, type and age · title (the whole card links to the incident) · area and risk · status.
+ */
+export function incidentItem(i, { areaName = i.area_name, when = `${age(i.opened_at)} ago`, actions = null } = {}) {
+  const kind = KIND[i.kind] || KIND.wildlife;
+  const em = i.emergency_type ? EMERGENCY[i.emergency_type] : null;
+  const lvl = i.kind === 'sos' ? 'critical' : i.risk_level || 'none';
+  const who = i.acknowledged_by_name || i.acknowledged_by || 'Ranger';
+  const status = i.status === 'open' ? ['Pending', 'urgent'] : i.status === 'acknowledged' ? [`${who.split(' ')[0]} responding`, 'warn']
+    : i.status === 'closed' ? ['Resolved', 'ok'] : ['False alarm', 'muted'];
+  const sim = i.source === 'simulated' || i.source === 'synthetic';
+  return el('article', { class: `inc-item lv-${lvl} st-${i.status}` },
+    el('span', { class: 'inc-icon', 'aria-hidden': 'true' }, icon(em?.icon || kind.icon)),
+    el('div', { class: 'inc-body' },
+      el('div', { class: 'inc-meta' }, el('strong', {}, i.ref), el('span', {}, i.kind === 'sos' ? `SOS${em ? ` · ${em.label}` : ''}` : kind.label), el('span', {}, when)),
+      el('a', { class: 'inc-title', href: `#/incidents/${i.id}` }, i.title || i.zone_label || 'Incident'),
+      el('div', { class: 'inc-sub' },
+        i.kind !== 'sos' && i.risk_level ? el('span', { class: 'inc-risk' }, RISK[i.risk_level]?.label || i.risk_level) : null,
+        areaName ? el('span', {}, areaName) : null,
+        sim ? el('span', { class: 'inc-tag' }, 'Simulated') : null,
+        i.demo ? el('span', { class: 'inc-tag' }, 'Demo') : null)),
+    el('span', { class: `inc-status tone-${status[1]}` }, status[0]),
+    actions ? el('div', { class: 'inc-actions' }, actions) : null);
 }

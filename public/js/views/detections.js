@@ -1,6 +1,6 @@
 // Wildlife detections log: every camera sighting and uploaded photo, with risk and source clearly labelled.
 import { api, clear, el, fmtDateTime, icon, qs } from '../lib.js';
-import { demoBadge, riskBadge } from '../status.js';
+import { demoBadge, riskBadge, RISK } from '../status.js';
 
 export function mount(main, ctx) {
   let params = { ...ctx.params };
@@ -44,7 +44,19 @@ export function mount(main, ctx) {
         clear(pager);
         return;
       }
-      clear(results, el('div', { class: 'table-wrap' }, el('table', { class: 'data table-cards' },
+      // Phones: one compact card per sighting. Wider screens: the table.
+      const name = (x) => (x.species ? x.species[0].toUpperCase() + x.species.slice(1) : 'No wildlife recognised');
+      const cards = el('div', { class: 'inc-list' }, d.items.map((x) => el('article', { class: `inc-item lv-${x.risk_level || 'none'}` },
+        el('span', { class: 'inc-icon', 'aria-hidden': 'true' }, icon('paw')),
+        el('div', { class: 'inc-body' },
+          el('div', { class: 'inc-meta' }, el('span', {}, fmtDateTime(x.captured_at)), x.confidence !== null ? el('span', {}, `${Math.round(x.confidence * 100)}% sure`) : null),
+          el('strong', { class: 'inc-name' }, name(x)),
+          el('div', { class: 'inc-sub' },
+            x.risk_level ? el('span', { class: 'inc-risk' }, RISK[x.risk_level]?.label || x.risk_level) : null,
+            el('span', {}, x.zone_name ? `${x.inside_zone ? 'Inside' : `${Math.round(x.distance_m)} m from`} ${x.zone_name}` : x.camera_label || x.area_name || ''),
+            x.analysis === 'simulated' ? el('span', { class: 'inc-tag' }, 'Simulated') : null)),
+        x.event_id ? el('a', { class: 'inc-status tone-muted', href: `#/incidents/${x.event_id}` }, `SS-${String(x.event_id).padStart(3, '0')}`) : null)));
+      clear(results, cards, el('div', { class: 'table-wrap inc-table' }, el('table', { class: 'data table-cards' },
         el('caption', { class: 'sr-only' }, 'Wildlife detections'),
         el('thead', {}, el('tr', {}, ['Time', 'Animal', 'Where', 'Nearest zone', 'Risk', 'Source', 'Incident'].map((h) => el('th', { scope: 'col' }, h)))),
         el('tbody', {}, d.items.map((x) => el('tr', {},
