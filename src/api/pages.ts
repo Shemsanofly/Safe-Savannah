@@ -168,15 +168,17 @@ export function touristPage(opts: { emergencyLine: string }): string {
     `<a class="skip-link" href="#t-main">Skip to main content</a>
 <div class="t-shell">
   <header class="t-top">
-    <span class="t-brand">${icon('logo', 'logo')}<span>Safe Savannah</span></span>
-    <div class="t-lang" role="group" aria-label="Language / Lugha">
-      <button type="button" data-lang="en" aria-pressed="true">EN</button>
-      <button type="button" data-lang="sw" aria-pressed="false">SW</button>
+    <div class="t-top-inner">
+      <a class="t-brand" href="#/">${icon('logo', 'logo')}<span>Safe Savannah</span></a>
+      <nav class="t-nav" id="t-nav" aria-label="Main" hidden></nav>
+      <div class="t-lang" role="group" aria-label="Language / Lugha">
+        <button type="button" data-lang="en" aria-pressed="true">EN</button>
+        <button type="button" data-lang="sw" aria-pressed="false">SW</button>
+      </div>
     </div>
   </header>
   <div class="conn-banner t-conn" id="conn-banner" role="alert" hidden></div>
   <main id="t-main" class="t-main" tabindex="-1"><div class="view-loading"><span class="spinner" aria-hidden="true"></span> Loading…</div></main>
-  <nav class="t-nav" id="t-nav" aria-label="Main" hidden></nav>
 </div>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script type="application/json" id="ss-boot">${boot}</script>

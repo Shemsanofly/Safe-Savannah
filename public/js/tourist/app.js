@@ -114,7 +114,8 @@ function renderNav() {
     el('a', { href: `#/${route}`, class: route === 'sos' ? 't-sos-link' : null, 'aria-current': r === route ? 'page' : null,
       // Re-tapping the current tab refreshes it (the hash does not change, so no hashchange fires).
       onclick: (e) => { if (location.hash === `#/${route}`) { e.preventDefault(); loadMe().then(rerender); } } },
-      icon(ic), el('span', {}, T(key), route === 'alerts' && unread ? ` (${unread})` : '')))));
+      el('span', { class: 't-nav-icon' }, icon(ic), route === 'alerts' && unread ? el('span', { class: 't-badge', 'aria-hidden': 'true' }, String(unread)) : null),
+      el('span', {}, T(key), route === 'alerts' && unread ? el('span', { class: 'sr-only' }, ` (${unread})`) : null)))));
 }
 function currentRoute() {
   return location.hash.replace(/^#\/?/, '').split('?')[0] || (me ? 'home' : 'welcome');
@@ -368,132 +369,218 @@ async function register() {
   authLayout('register', form);
 }
 
-function home() {
-  const t = me.tourist;
-  const feed = me.feed;
-  const activeAlerts = feed.alerts.filter((a) => a.active);
-  const danger = activeAlerts.some((a) => a.level === 'danger' || a.level === 'warning');
-  const openSos = feed.sos.find((s) => s.status === 'open' || s.status === 'acknowledged');
-  page(`${T('hello')}, ${t.name.split(' ')[0]}`,
-    el('section', { class: 't-hero' },
-      el('h2', { class: 'strong' }, `${T('hello')}, ${t.name.split(' ')[0]}`),
-      el('p', {}, icon('pin', 'icon icon-sm'), ' ', [t.lodge, feed.area?.name].filter(Boolean).join(' · ')),
-      el('p', { class: 'small' }, `${fmtDay(t.trip_start)} – ${fmtDay(t.trip_end)} · ${T('group_of')} ${t.group_size}`)),
-    openSos ? sosStatusCard(openSos) : null,
-    activeAlerts.length || feed.activeWildlifeIncidents
-      ? el('div', { class: `t-status ${danger ? 'danger' : 'warn'}`, role: 'status' }, icon('incident', 'icon icon-lg'),
-          el('div', { class: 'stack' }, el('strong', {}, T('active_alerts', Math.max(activeAlerts.length, feed.activeWildlifeIncidents))),
-            activeAlerts[0] ? el('span', {}, alertTitle(activeAlerts[0])) : null, el('a', { href: '#/alerts', class: 'strong' }, T('see_alerts'))))
-      : el('div', { class: 't-status ok', role: 'status' }, icon('check-circle', 'icon icon-lg'), el('div', {}, el('strong', {}, T('no_alerts_title')), el('p', { class: 'small' }, T('no_alerts_body')))),
-    el('a', { href: '#/sos', class: 'sos-big' }, icon('siren'), T('sos_button'), el('small', {}, T('sos_sub'))),
-    locationCard(),
-    emergencyLink());
-  pollMe(15000, home);
+// ---------------------------------------------------------------- signed-in views
+const LEVEL_ICON = { danger: 'siren', warning: 'alert', advisory: 'info' };
+const SOS_TYPES = [['medical', 'heart', 't_medical'], ['wildlife', 'paw', 't_wildlife'], ['vehicle', 'car', 't_vehicle'], ['personal', 'shield', 't_personal']];
+const sosDraft = { type: null, details: '', withLoc: true }; // survives background refreshes
+const localized = (a, k) => (lang === 'sw' ? a[`${k}_sw`] : a[`${k}_en`]) || '';
+const isSimulated = (a) => /simulated|jaribio/i.test(`${a.title_en} ${a.title_sw}`);
+const isOpen = (s) => s.status === 'open' || s.status === 'acknowledged';
+const firstName = () => me.tourist.name.split(' ')[0];
+
+function pageHead(title, sub) {
+  return el('header', { class: 't-page-head' }, el('h2', {}, title), sub ? el('p', {}, sub) : null);
+}
+function emptyCard(ic, title, body) {
+  return el('div', { class: 't-panel t-empty' }, el('span', { class: 't-empty-icon' }, icon(ic)), el('strong', {}, title), el('p', {}, body));
 }
 
-function alertTitle(a) {
-  return lang === 'sw' ? a.title_sw : a.title_en;
+function home() {
+  const feed = me.feed;
+  const active = feed.alerts.filter((a) => a.active);
+  const openSos = feed.sos.find(isOpen);
+  page(`${T('hello')}, ${firstName()}`,
+    openSos ? sosTracker(openSos, { compact: true }) : null,
+    el('div', { class: 't-home' },
+      el('div', { class: 't-col' }, tripCard(), safetyStatus(active, feed.activeWildlifeIncidents)),
+      el('div', { class: 't-col' }, openSos ? null : sosCallout(), quickActions())));
+  pollMe(openSos ? 5000 : 15000, home);
+}
+
+function tripCard() {
+  const t = me.tourist;
+  return el('section', { class: 't-trip-card', 'aria-label': T('your_safari') },
+    el('p', { class: 't-kicker' }, T('your_safari')),
+    el('h2', {}, `${T('hello')}, ${firstName()}`),
+    el('ul', { class: 't-chips' },
+      el('li', {}, icon('pin', 'icon icon-sm'), [t.lodge, me.feed.area?.name].filter(Boolean).join(' · ')),
+      el('li', {}, icon('calendar', 'icon icon-sm'), `${fmtDay(t.trip_start)} – ${fmtDay(t.trip_end)}`),
+      el('li', {}, icon('users', 'icon icon-sm'), T('people', t.group_size))));
+}
+
+/** One clear safety state: a real warning for the tourist, rangers monitoring, or all clear. */
+function safetyStatus(active, monitoring) {
+  if (active.length) {
+    const sev = active.some((a) => a.level === 'danger') ? 'danger' : 'warning';
+    const lead = active.find((a) => a.level === sev) || active[0];
+    const steps = (lang === 'sw' ? lead.actions_sw : lead.actions_en) || [];
+    return el('section', { class: `t-safety is-${sev}`, role: 'status', 'aria-labelledby': 't-safety-title' },
+      el('div', { class: 't-safety-head' }, el('span', { class: 't-safety-icon' }, icon(sev === 'danger' ? 'siren' : 'alert')),
+        el('div', {}, el('p', { class: 't-kicker' }, T(sev === 'danger' ? 'status_danger' : 'status_warning')), el('h2', { id: 't-safety-title' }, localized(lead, 'title')))),
+      steps.length ? el('ul', { class: 't-checklist', 'aria-label': T('what_to_do') }, steps.slice(0, 3).map((x) => el('li', {}, icon('check', 'icon icon-sm'), el('span', {}, x)))) : null,
+      el('a', { href: '#/alerts', class: 't-safety-link' }, el('span', {}, T('see_all_alerts')),
+        active.length > 1 ? el('span', { class: 't-count' }, T('more_alerts', active.length - 1)) : null, icon('chevron-right', 'icon icon-sm')));
+  }
+  const watching = monitoring > 0;
+  return el('section', { class: `t-safety ${watching ? 'is-watch' : 'is-clear'}`, role: 'status', 'aria-labelledby': 't-safety-title' },
+    el('div', { class: 't-safety-head' }, el('span', { class: 't-safety-icon' }, icon(watching ? 'eye' : 'check-circle')),
+      el('div', {}, el('h2', { id: 't-safety-title' }, T(watching ? 'status_monitoring' : 'status_clear')),
+        el('p', {}, T(watching ? 'status_monitoring_body' : 'no_alerts_body')))));
+}
+
+function sosCallout() {
+  return el('a', { href: '#/sos', class: 't-sos-cta' },
+    el('span', { class: 't-sos-ring' }, icon('siren')),
+    el('span', { class: 't-sos-text' }, el('small', {}, T('need_help')), el('strong', {}, T('sos_cta')), el('small', {}, T('sos_cta_sub'))),
+    icon('chevron-right'));
+}
+
+function quickActions() {
+  const t = me.tourist;
+  const line = me.emergencyLine;
+  const sub = el('small', { 'aria-live': 'polite' }, t.last_located_at ? `${T('location_shared')} · ${tAge(t.last_located_at)}` : T('location_short'));
+  const share = el('button', { type: 'button', class: 't-qa' }, el('span', { class: 't-qa-icon' }, icon('pin')), el('span', { class: 't-qa-text' }, el('strong', {}, T('share_short')), sub));
+  share.addEventListener('click', () => busy(share, async () => {
+    const pos = await getPosition();
+    if (!pos) {
+      sub.textContent = T('location_denied');
+      return;
+    }
+    await tApi.post('/api/tourist/location', pos);
+    sub.textContent = `${T('location_shared')} · ${tAge(new Date().toISOString())}`;
+    toast(T('location_shared'));
+  }));
+  return el('section', { class: 't-quick', 'aria-labelledby': 't-qa-title' },
+    el('h3', { id: 't-qa-title', class: 't-section-title' }, T('quick_actions')),
+    el('div', { class: 't-qa-grid' }, share,
+      el('a', { class: 't-qa', href: `tel:${line}` }, el('span', { class: 't-qa-icon' }, icon('phone')), el('span', { class: 't-qa-text' }, el('strong', {}, `${T('call_short')} ${line}`), el('small', {}, T('emergency_line')))),
+      el('a', { class: 't-qa', href: '#/guide' }, el('span', { class: 't-qa-icon' }, icon('book')), el('span', { class: 't-qa-text' }, el('strong', {}, T('tips_short')), el('small', {}, T('tips_sub'))))));
 }
 
 function alerts() {
   const list = me.feed.alerts;
+  const now = list.filter((a) => a.active);
+  const earlier = list.filter((a) => !a.active);
   page(T('alerts_title'),
-    el('div', { class: 'page-head' }, el('div', {}, el('h2', {}, T('alerts_title')), el('p', { class: 'sub' }, T('alerts_sub')))),
-    list.length
-      ? el('div', { class: 'stack' }, list.map((a) => el('article', { class: `alert-card lv-${a.level} ${a.active ? '' : 'is-past'}` },
-          el('div', { class: 'row' }, el('span', { class: `badge ${a.active ? 'tone-urgent' : 'tone-muted'}` }, a.active ? T('active') : T('earlier')),
-            /simulated|jaribio/i.test(a.title_en + a.title_sw) ? el('span', { class: 'badge tone-sim' }, T('simulated_note')) : null,
-            a.demo ? el('span', { class: 'badge tone-demo' }, T('demo_note')) : null,
-            el('span', { class: 'small muted' }, tAge(a.created_at))),
-          el('h3', {}, alertTitle(a)),
-          el('p', {}, lang === 'sw' ? a.body_sw : a.body_en),
-          el('div', {}, el('strong', { class: 'small' }, T('what_to_do')), el('ol', {}, (lang === 'sw' ? a.actions_sw : a.actions_en).map((x) => el('li', {}, x)))))))
-      : el('div', { class: 't-card' }, el('div', { class: 'empty' }, icon('check-circle'), el('strong', {}, T('alerts_empty')), el('p', {}, T('no_alerts_body')))));
+    pageHead(T('alerts_title'), T('alerts_sub')),
+    list.length ? null : emptyCard('check-circle', T('alerts_empty'), T('no_alerts_body')),
+    now.length ? el('section', { class: 't-section' }, el('h3', { class: 't-section-title' }, T('now_section')), el('div', { class: 't-alert-list' }, now.map((a) => alertCard(a)))) : null,
+    earlier.length ? el('section', { class: 't-section' }, el('h3', { class: 't-section-title' }, T('earlier_section')), el('div', { class: 't-alert-list' }, earlier.map((a) => alertCard(a, true)))) : null);
   pollMe(15000, alerts);
 }
 
+function alertCard(a, past = false) {
+  const lvl = LEVEL_ICON[a.level] ? a.level : 'advisory';
+  const steps = (lang === 'sw' ? a.actions_sw : a.actions_en) || [];
+  const head = el('div', { class: 't-alert-head' },
+    el('span', { class: 't-alert-icon' }, icon(LEVEL_ICON[lvl])),
+    el('div', { class: 't-alert-title' },
+      el('div', { class: 't-alert-meta' }, el('span', { class: 't-level' }, T(`level_${lvl}`)), el('span', {}, tAge(a.created_at)),
+        isSimulated(a) ? el('span', { class: 'badge tone-sim' }, T('simulated_note')) : null, a.demo ? el('span', { class: 'badge tone-demo' }, T('demo_note')) : null),
+      el('h4', {}, localized(a, 'title'))));
+  const body = el('div', { class: 't-alert-body' }, el('p', {}, localized(a, 'body')),
+    steps.length ? el('div', { class: 't-todo' }, el('strong', {}, T('what_to_do')), el('ol', {}, steps.map((x) => el('li', {}, x)))) : null);
+  if (past) return el('details', { class: `t-alert lv-${lvl} is-past` }, el('summary', {}, head, icon('chevron-down', 'icon icon-sm t-caret')), body);
+  return el('article', { class: `t-alert lv-${lvl}` }, head, body);
+}
+
 function sos() {
-  let type = null;
-  const openSos = me.feed.sos.find((s) => s.status === 'open' || s.status === 'acknowledged');
-  const types = [['medical', 'heart', 't_medical'], ['wildlife', 'paw', 't_wildlife'], ['vehicle', 'car', 't_vehicle'], ['personal', 'shield', 't_personal']];
-  const grid = el('div', { class: 'type-grid', role: 'group', 'aria-label': T('sos_which') }, types.map(([v, ic, key]) => {
-    const b = el('button', { type: 'button', class: 'type-btn', 'aria-pressed': 'false' }, icon(ic), T(key));
+  const openSos = me.feed.sos.find(isOpen);
+  page(T('sos_title'),
+    pageHead(T('sos_title'), openSos ? null : T('sos_intro')),
+    el('div', { class: 't-sos-layout' },
+      el('div', { class: 't-col' }, openSos ? sosTracker(openSos) : sosForm()),
+      el('aside', { class: 't-col' }, openSos ? null : callCard(), requestHistory(openSos))));
+  pollMe(openSos ? 5000 : 15000, sos);
+}
+
+function sosForm() {
+  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
+  const grid = el('div', { class: 't-type-grid', role: 'group', 'aria-labelledby': 't-step-type' }, SOS_TYPES.map(([v, ic, key]) => {
+    const b = el('button', { type: 'button', class: 't-type', 'aria-pressed': String(sosDraft.type === v) }, el('span', { class: 't-type-icon' }, icon(ic)), el('span', {}, T(key)));
     b.addEventListener('click', () => {
-      type = v;
-      grid.querySelectorAll('.type-btn').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      sosDraft.type = v;
+      grid.querySelectorAll('.t-type').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
       err.hidden = true;
     });
     return b;
   }));
-  const details = el('textarea', { id: 's-details', maxlength: '500', placeholder: T('sos_details_ph') });
-  const withLoc = el('input', { type: 'checkbox', checked: true, id: 's-loc' });
-  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
-  const send = el('button', { type: 'submit', class: 'sos-big' }, icon('siren'), el('span', {}, T('sos_send')));
-  const form = el('form', { class: 't-card', novalidate: true }, el('h2', {}, T('sos_which')), grid,
-    field('s-details', T('sos_details'), details), el('label', { class: 'duty-toggle' }, withLoc, el('span', {}, T('sos_include_location'))), err, send);
+  const details = el('textarea', { id: 's-details', rows: '2', maxlength: '500', placeholder: T('sos_details_ph') });
+  details.value = sosDraft.details;
+  details.addEventListener('input', () => { sosDraft.details = details.value; });
+  const withLoc = el('input', { type: 'checkbox', id: 's-loc', checked: sosDraft.withLoc });
+  withLoc.addEventListener('change', () => { sosDraft.withLoc = withLoc.checked; });
+  const send = el('button', { type: 'submit', class: 't-send-sos' }, icon('siren'), el('span', {}, T('sos_send')));
+  const form = el('form', { class: 't-panel t-sos-form', novalidate: true },
+    el('h3', { class: 't-step', id: 't-step-type' }, T('sos_step_type')), grid,
+    el('label', { class: 't-step', for: 's-details' }, T('sos_step_details')), details,
+    el('label', { class: 't-switch' }, withLoc, el('span', { class: 't-switch-track', 'aria-hidden': 'true' }), el('span', {}, T('sos_include_location'))),
+    err, send);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!type) {
+    if (!sosDraft.type) {
       err.hidden = false;
       err.textContent = T('sos_choose_type');
       grid.querySelector('button').focus();
       return;
     }
-    const label = T(types.find((x) => x[0] === type)[2]);
+    const label = T(SOS_TYPES.find((x) => x[0] === sosDraft.type)[2]);
     if (!(await confirmDialog({ title: T('sos_confirm_title'), body: T('sos_confirm_body', label), confirmLabel: T('sos_send'), tone: 'urgent' }))) return;
     await busy(send, async () => {
-      const pos = withLoc.checked ? await getPosition() : null;
+      const pos = sosDraft.withLoc ? await getPosition() : null;
       try {
-        const r = await tApi.post('/api/tourist/sos', { type, description: details.value.trim() || undefined, lat: pos?.lat, lng: pos?.lng });
+        const r = await tApi.post('/api/tourist/sos', { type: sosDraft.type, description: sosDraft.details.trim() || undefined, lat: pos?.lat, lng: pos?.lng });
+        Object.assign(sosDraft, { type: null, details: '', withLoc: true });
         toast(r.duplicate ? T('sos_already') : T('sos_sent'));
         await loadMe();
         sos();
+        window.scrollTo({ top: 0 });
+        main.querySelector('h1')?.focus({ preventScroll: true });
       } catch (e2) {
         err.hidden = false;
         clear(err, e2.message, ' ', el('a', { href: `tel:${me.emergencyLine}`, class: 'strong' }, `${T('call')} ${me.emergencyLine}`));
       }
     });
   });
-  page(T('sos_title'),
-    el('h2', { class: 'section-head' }, T('sos_title')),
-    openSos ? sosStatusCard(openSos) : form,
-    emergencyLink(),
-    el('section', { class: 'section' }, el('h3', {}, T('my_requests')), me.feed.sos.length
-      ? el('div', { class: 'stack' }, me.feed.sos.map((s) => el('div', { class: 't-card' }, el('div', { class: 'row between' }, el('strong', {}, `${s.ref} · ${T(`t_${s.emergency_type}`)}`), el('span', { class: 'small muted' }, tAge(s.opened_at))), statusSteps(s))))
-      : el('p', { class: 'muted' }, T('none_yet'))));
-  pollMe(openSos ? 5000 : 15000, sos);
+  return form;
 }
 
-function statusSteps(s) {
+/** Live progress of an SOS: received → ranger responding → resolved. */
+function sosTracker(s, opts = {}) {
   const step = s.status === 'open' ? 0 : s.status === 'acknowledged' ? 1 : 2;
-  return el('ol', { class: 'status-steps', 'aria-label': T('sos_status') }, [T('st_received'), T('st_responding'), T('st_resolved')].map((l, i) =>
-    el('li', { class: i === step ? 'is-current' : i < step ? 'is-done' : '', 'aria-current': i === step ? 'step' : null }, l)));
+  const open = step < 2;
+  const times = [s.opened_at, s.acknowledged_at, s.closed_at];
+  const labels = [T('st_received'), step >= 1 && s.ranger_name ? T('st_ranger', s.ranger_name) : T('st_responding'), T('st_resolved')];
+  const title = step === 0 ? T('st_waiting') : step === 1 ? T('help_on_way') : T('st_resolved_by', s.ranger_name || 'Ranger');
+  return el('section', { class: `t-tracker ${open ? 'is-open' : 'is-done'}${opts.compact ? ' is-compact' : ''}`, 'aria-live': 'polite', 'aria-labelledby': `t-tr-${s.id}` },
+    el('div', { class: 't-tracker-head' }, el('span', { class: 't-tracker-icon' }, icon(open ? 'siren' : 'check-circle')),
+      el('div', {}, el('p', { class: 't-kicker' }, `${s.ref} · ${T(`t_${s.emergency_type}`)}`), el('h2', { id: `t-tr-${s.id}` }, title))),
+    el('ol', { class: 't-progress', 'aria-label': T('sos_status') }, labels.map((l, i) =>
+      el('li', { class: i < step || step === 2 ? 'is-done' : i === step ? 'is-current' : '', 'aria-current': i === step ? 'step' : null },
+        el('span', { class: 't-dot' }, i < step || step === 2 ? icon('check', 'icon icon-sm') : null),
+        el('span', { class: 't-progress-label' }, l, times[i] && (i <= step) ? el('small', {}, tAge(times[i])) : null)))),
+    open ? el('p', { class: 't-tracker-hint' }, T('status_open_hint')) : null,
+    opts.compact
+      ? el('a', { href: '#/sos', class: 't-tracker-link' }, T('sos_status'), icon('chevron-right', 'icon icon-sm'))
+      : open ? el('a', { href: `tel:${me.emergencyLine}`, class: 't-call-btn' }, icon('phone'), `${T('call')} ${me.emergencyLine}`) : null);
 }
 
-function sosStatusCard(s) {
-  return el('section', { class: 't-card', 'aria-live': 'polite' },
-    el('div', { class: 'row between' }, el('h2', {}, T('sos_status')), el('span', { class: 'badge tone-urgent' }, s.ref)),
-    el('p', { class: 'strong' }, T(`t_${s.emergency_type}`)),
-    statusSteps(s),
-    el('p', {}, s.status === 'open' ? T('st_waiting') : s.status === 'acknowledged' ? T('st_ranger', s.ranger_name || 'Ranger') : T('st_resolved_by', s.ranger_name || 'Ranger')),
-    s.status === 'open' || s.status === 'acknowledged' ? el('p', { class: 'small' }, T('sos_also_call')) : null);
+function callCard() {
+  const line = me.emergencyLine;
+  return el('a', { class: 't-call-card', href: `tel:${line}` }, el('span', { class: 't-qa-icon' }, icon('phone')),
+    el('span', { class: 't-qa-text' }, el('small', {}, T('or_call')), el('strong', {}, line)), icon('chevron-right', 'icon icon-sm'));
 }
 
-function locationCard() {
-  const t = me.tourist;
-  const status = el('p', { class: 'small muted', 'aria-live': 'polite' }, t.last_located_at ? `${T('location_shared')} · ${tAge(t.last_located_at)}` : T('location_help'));
-  const btn = el('button', { type: 'button', class: 'btn btn-block' }, icon('pin'), el('span', {}, T('share_location')));
-  btn.addEventListener('click', () => busy(btn, async () => {
-    const pos = await getPosition();
-    if (!pos) {
-      status.textContent = T('location_denied');
-      return;
-    }
-    await tApi.post('/api/tourist/location', pos);
-    status.textContent = `${T('location_shared')} · ${tAge(new Date().toISOString())}`;
-    toast(T('location_shared'));
-  }));
-  return el('div', { class: 't-card', style: null }, btn, status);
+function requestHistory(current) {
+  const list = me.feed.sos.filter((s) => s !== current);
+  const label = (s) => (s.status === 'open' ? T('st_received') : s.status === 'acknowledged' ? T('st_responding') : T('st_resolved'));
+  return el('section', { class: 't-panel' }, el('h3', { class: 't-panel-title' }, T('my_requests')),
+    list.length
+      ? el('ul', { class: 't-history' }, list.map((s) => el('li', {},
+          el('span', { class: 't-history-icon' }, icon(SOS_TYPES.find((x) => x[0] === s.emergency_type)?.[1] || 'siren')),
+          el('span', { class: 't-history-text' }, el('strong', {}, T(`t_${s.emergency_type}`)), el('small', {}, `${s.ref} · ${tAge(s.opened_at)}`)),
+          el('span', { class: `t-pill${isOpen(s) ? ' is-open' : ''}` }, label(s)))))
+      : el('p', { class: 't-muted' }, T('no_requests')));
 }
 
 function getPosition() {
@@ -505,11 +592,12 @@ function getPosition() {
 
 function guide() {
   page(T('guide_title'),
-    el('div', { class: 'page-head' }, el('div', {}, el('h2', {}, T('guide_title')), el('p', { class: 'sub' }, T('guide_sub')))),
-    el('div', {}, GUIDE[lang].map(([ic, title, items], i) => el('details', { class: 'guide-section', open: i === 0 ? true : null },
-      el('summary', {}, icon(ic), title), el('ul', {}, items.map((x) => el('li', {}, x)))))),
-    el('details', { class: 'guide-section section' }, el('summary', {}, icon('globe'), lang === 'sw' ? 'Maneno muhimu' : 'Useful Kiswahili phrases'),
-      el('ul', {}, PHRASES.map(([en, sw]) => el('li', {}, el('strong', {}, sw), ` — ${en}`)))),
+    pageHead(T('guide_title'), T('guide_sub')),
+    el('div', { class: 't-guide-grid' }, GUIDE[lang].map(([ic, title, items], i) => el('details', { class: 't-guide', open: i === 0 ? true : null },
+      el('summary', {}, el('span', { class: 't-guide-icon' }, icon(ic)), el('span', { class: 't-guide-name' }, title), icon('chevron-down', 'icon icon-sm t-caret')),
+      el('ul', {}, items.map((x) => el('li', {}, x)))))),
+    el('section', { class: 't-panel t-phrases' }, el('h3', { class: 't-panel-title' }, icon('globe', 'icon icon-sm'), T('phrases_title')),
+      el('dl', {}, PHRASES.map(([en, sw]) => el('div', {}, el('dt', {}, sw), el('dd', {}, en))))),
     emergencyLink());
 }
 
@@ -521,21 +609,27 @@ async function trip() {
     lodge: el('input', { id: 'p-lodge', value: t.lodge || '' }),
     trip_start: el('input', { id: 'p-start', type: 'date', value: t.trip_start }),
     trip_end: el('input', { id: 'p-end', type: 'date', value: t.trip_end }),
-    group_size: el('input', { id: 'p-group', type: 'number', min: '1', max: '60', value: String(t.group_size) }),
+    group_size: el('input', { id: 'p-group', type: 'number', min: '1', max: '60', inputmode: 'numeric', value: String(t.group_size) }),
     emergency_contact: el('input', { id: 'p-ec', value: t.emergency_contact || '' }),
     sms_alerts: el('input', { id: 'p-sms', type: 'checkbox', checked: t.sms_alerts }),
   };
   f.area_id.value = t.area_id;
   const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
-  const save = el('button', { type: 'submit', class: 'btn btn-primary btn-block' }, el('span', {}, T('save')));
-  const form = el('form', { class: 't-card', novalidate: true },
-    el('h2', {}, T('trip_title')), el('p', { class: 'small muted' }, `${t.name} · ${t.phone}`), err,
+  const save = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, el('span', {}, T('save')));
+  const form = el('form', { class: 't-panel t-form', novalidate: true },
+    el('h3', { class: 't-panel-title' }, icon('map', 'icon icon-sm'), T('trip_details')), err,
     field('p-area', T('destination'), f.area_id), field('p-lodge', T('lodge'), f.lodge),
-    el('div', { class: 'type-grid' }, field('p-start', T('trip_start'), f.trip_start), field('p-end', T('trip_end'), f.trip_end)),
+    el('div', { class: 't-form-grid' }, field('p-start', T('trip_start'), f.trip_start), field('p-end', T('trip_end'), f.trip_end)),
     field('p-group', T('group'), f.group_size), field('p-ec', T('emergency_contact'), f.emergency_contact),
-    el('label', { class: 'duty-toggle' }, f.sms_alerts, el('span', {}, T('sms_alerts'))), save);
+    el('label', { class: 't-switch' }, f.sms_alerts, el('span', { class: 't-switch-track', 'aria-hidden': 'true' }), el('span', {}, T('sms_alerts'))), save);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (f.trip_end.value < f.trip_start.value) {
+      err.hidden = false;
+      err.textContent = T('err_dates');
+      f.trip_end.focus();
+      return;
+    }
     await busy(save, async () => {
       try {
         await api.patch('/api/tourist/me', { area_id: f.area_id.value, lodge: f.lodge.value || null, trip_start: f.trip_start.value, trip_end: f.trip_end.value,
@@ -555,7 +649,19 @@ async function trip() {
     me = null;
     go('welcome');
   });
-  page(T('trip_title'), form, el('div', { class: 't-card', style: null }, out), emergencyLink());
+  const initials = t.name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+  page(T('trip_title'),
+    pageHead(T('trip_title')),
+    el('div', { class: 't-trip-layout' }, form,
+      el('aside', { class: 't-col' },
+        el('section', { class: 't-panel t-account' }, el('h3', { class: 't-panel-title' }, icon('user', 'icon icon-sm'), T('account')),
+          el('div', { class: 't-account-id' }, el('span', { class: 't-avatar', 'aria-hidden': 'true' }, initials),
+            el('div', {}, el('strong', {}, t.name), el('small', {}, t.phone))),
+          el('dl', { class: 't-facts' },
+            el('div', {}, el('dt', {}, T('language')), el('dd', {}, lang === 'sw' ? 'Kiswahili' : 'English')),
+            el('div', {}, el('dt', {}, T('alerts_by_sms')), el('dd', {}, t.sms_alerts ? T('on') : T('off')))),
+          out),
+        emergencyLink())));
 }
 
 function emergencyLink() {
