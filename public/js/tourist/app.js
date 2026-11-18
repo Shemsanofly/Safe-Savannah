@@ -189,7 +189,7 @@ function authLayout(mode, form) {
       el('section', { class: 't-auth-story', 'aria-labelledby': 't-story-title' },
         el('div', { class: 't-story-copy' },
           el('span', { class: 't-eyebrow' }, icon('globe'), T('traveller_companion')),
-          el('h2', { id: 't-story-title' }, T('auth_headline'), el('em', {}, T('auth_headline_accent'))),
+          el('h2', { id: 't-story-title' }, T('auth_headline'), ' ', el('em', {}, T('auth_headline_accent'))),
           el('p', { class: 't-story-intro' }, T('auth_intro')),
           el('ul', { class: 't-auth-features' }, feature('paw', 'feature_alerts', 'feature_alerts_body'),
             feature('radio', 'feature_help', 'feature_help_body'), feature('book', 'feature_guide', 'feature_guide_body'))),
@@ -201,9 +201,7 @@ function authLayout(mode, form) {
             el('a', { href: '#/register', 'aria-current': isRegister ? 'page' : null }, T('create_account'))),
           form),
         el('div', { class: 't-auth-support' }, el('a', { href: '#/guide' }, icon('book'), T('read_guidance')),
-          el('span', {}, icon('globe'), 'English / Kiswahili')),
-        emergencyLink())),
-    el('p', { class: 't-auth-footer' }, icon('shield'), T('auth_footer')));
+          el('a', { href: `tel:${BOOT.emergencyLine}` }, icon('phone'), `${T('emergency_line')}: ${BOOT.emergencyLine}`)))));
 }
 
 function pinControl(input) {
@@ -234,10 +232,8 @@ function login() {
   const err = el('div', { id: 't-auth-error', class: 'alert alert-error', role: 'alert', hidden: true });
   const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, el('span', {}, T('sign_in')), icon('chevron-right'));
   const form = el('form', { class: 't-auth-form', novalidate: true },
-    el('div', { class: 't-auth-heading' }, el('span', { class: 't-auth-emblem' }, icon('login')),
-      el('h2', {}, T('welcome_back')), el('p', {}, T('login_intro'))),
+    el('div', { class: 't-auth-heading' }, el('h2', {}, T('welcome_back')), el('p', {}, T('login_intro'))),
     err, field('l-phone', T('phone'), phone, T('login_phone_hint')), field('l-pin', T('pin_login'), pinControl(pin)), btn,
-    el('p', { class: 't-auth-alternate' }, T('new_here'), ' ', el('a', { href: '#/register' }, T('create_account'))),
     el('p', { class: 't-privacy-note' }, icon('shield'), T('login_privacy')));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -305,9 +301,8 @@ async function register() {
     el('p', { class: 't-privacy-note' }, icon('shield'), T('consent')));
   const back = el('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { showStep(1); heading.focus(); } }, icon('chevron-left'), T('back'));
   const form = el('form', { class: 't-auth-form', novalidate: true },
-    el('div', { class: 't-auth-heading' }, el('span', { class: 't-auth-emblem' }, icon('user')), heading, intro),
-    steps, err, account, tripFields, el('div', { class: 't-auth-actions' }, back, btn),
-    el('p', { class: 't-auth-alternate' }, T('have_account'), ' ', el('a', { href: '#/login' }, T('sign_in'))));
+    el('div', { class: 't-auth-heading' }, heading, intro),
+    steps, err, account, tripFields, el('div', { class: 't-auth-actions' }, back, btn));
   function showStep(step) {
     registrationStep = step;
     account.hidden = step !== 1;

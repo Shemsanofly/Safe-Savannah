@@ -794,12 +794,6 @@ dialog::backdrop { background: rgba(11, 33, 24, 0.5); }
 .t-sms-choice input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--forest-700); }
 @media (min-width: 1440px) { .t-auth-layout { gap: 90px; } }
 @media (max-width: 900px) {
-  .t-auth-layout { gap: 28px; grid-template-columns: minmax(0, .9fr) minmax(0, 1fr); }
-  .t-story-copy { padding: 28px; }
-  .t-auth-story h2 { font-size: 2.5rem; }
-  .t-auth-features { gap: 18px; }
-}
-@media (max-width: 700px) {
   .t-auth-page .t-top { padding: 17px 20px; }
   .t-auth-page .t-brand { font-size: 1.14rem; }
   .t-auth-page .t-main { padding: 0 18px 24px; }
@@ -1326,3 +1320,23 @@ details.panel > summary::-webkit-details-marker { display: none; }
 @media (max-width: 900px) { .login-brand { width: 100%; max-width: 460px; justify-self: center; align-self: start; } }
 @media (min-width: 600px) and (max-width: 900px) { .login { padding-top: 48px; } }
 @media (max-width: 900px) { .login { align-content: start; } }
+
+/* ===================== traveller sign-in: compact on phones and tablets ===================== */
+.t-auth-support a { color: var(--forest-700); font-weight: 600; }
+.t-auth-card .t-auth-heading { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .t-auth-layout { max-width: 520px; margin: 0 auto; }
+  .t-auth-story { border-radius: 20px; }
+  .t-story-copy { padding: 20px 22px 30px; }
+  .t-eyebrow { display: none; }
+  .t-auth-story h2 { margin-top: 0; font-size: clamp(1.55rem, 6vw, 2rem); line-height: 1.15; max-width: none; }
+  .t-auth-story h2 em { display: inline; }
+  .t-auth-panel { width: calc(100% - 16px); max-width: none; }
+  .t-auth-card { padding: 22px 20px; }
+  .t-auth-switch { margin-bottom: 18px; }
+  .t-auth-heading h2 { font-size: 1.6rem; }
+  .t-auth-form { gap: 16px; }
+  .t-auth-support { margin-top: 16px; font-size: .8rem; gap: 10px 22px; }
+}
+@media (max-width: 900px) { .t-auth-page .t-top-inner { max-width: 520px; margin: 0 auto; } }
+@media (max-width: 430px) { .t-form-grid { grid-template-columns: minmax(0, 1fr); } }
