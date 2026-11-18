@@ -6,14 +6,13 @@ export function mount(main) {
   const operatorsBox = el('div', {});
   main.append(
     el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'Settings'),
-      el('p', { class: 'sub' }, 'How this station is set up. Values come from the server configuration and are read-only here.'))),
+      el('p', { class: 'sub' }, 'How this station is set up (read-only).'))),
     body, operatorsBox);
 
   async function load() {
     try {
       const s = await api.get('/api/settings');
       render(s);
-      if (s.permissions.canManageOperators) clear(operatorsBox, el('div', { class: 'alert alert-info section' }, icon('users'), el('div', { class: 'grow' }, 'Rangers, admins and tourist accounts are managed under '), el('a', { class: 'btn btn-sm', href: '#/people' }, 'People')));
     } catch (err) {
       clear(body, el('div', { class: 'alert alert-error', role: 'alert' }, icon('alert'), el('div', { class: 'grow' }, el('strong', {}, 'Could not load settings. '), err.message),
         el('button', { type: 'button', class: 'btn btn-sm', onclick: load }, 'Try again')));
@@ -24,37 +23,36 @@ export function mount(main) {
     const d = s.detector;
     const secondsForStreak = (d.consecutiveFrames / d.sampleFps).toFixed(1);
     clear(body,
-      el('div', { class: 'alert alert-info' }, icon('info'), el('div', { class: 'grow' },
-        'These come from the server configuration. To change them, ask the system owner. Safety zones and people are managed in their own screens.')),
-      el('div', { class: 'cols-2' },
-        section('camera', 'Camera & zone', [
-          ['Camera', `${s.camera.label} (${s.camera.id})`],
-          ['Source type', { file: 'Recorded video (replay)', device: 'USB / local camera', stream: 'Network camera stream' }[s.camera.sourceKind] || 'Not reported yet'],
-          ...(s.camera.sourceKind === 'file' ? [['Replay', s.camera.loopsReplay ? 'Loops continuously' : 'Plays once']] : []),
-          ['Marked zones', s.zones.length ? s.zones.map((z) => `${z.label} (${z.vertices}-point outline)`).join(', ') : 'None configured'],
+      el('div', { class: 'cols-3' },
+        section('camera', 'Camera', [
+          ['Camera', s.camera.label],
+          ['Source', { file: 'Recorded video (replay)', device: 'USB / local camera', stream: 'Network camera stream' }[s.camera.sourceKind] || 'Not reported yet'],
         ]),
         section('cpu', 'Detection', [
-          ['Detector', d.kind === 'inference' ? el('span', { class: 'badge tone-real' }, icon('cpu'), 'Real detection model') : d.kind === 'simulated' ? el('span', { class: 'badge tone-sim' }, icon('flask'), 'Simulated (scripted demo)') : 'Not reported yet'],
+          ['Detector', d.kind === 'inference' ? el('span', { class: 'badge tone-real' }, icon('cpu'), 'Real AI model') : d.kind === 'simulated' ? el('span', { class: 'badge tone-sim' }, icon('flask'), 'Simulated (demo)') : 'Not reported yet'],
           ['Looks for', d.targetClass],
-          ['Alert rule', `${d.consecutiveFrames} frames in a row (about ${secondsForStreak} s) with confidence ≥ ${Math.round(d.confidenceThreshold * 100)}% and the animal's feet inside the zone`],
-          ['Frames analysed', `${d.sampleFps} per second`],
-          ['Re-arming', `After the alert is closed and the zone has been empty for ${d.clearSeconds} s`],
-          ['Feed counts as stale', `After ${d.staleFeedSeconds} s without a new frame (zone shows UNKNOWN)`],
+          ['Alert when', `Seen ${d.consecutiveFrames} frames in a row (about ${secondsForStreak} s) inside the zone`],
         ]),
-        section('clock', 'Time', [
-          ['Lodge time zone', s.timeZone],
-          ['Your role', BOOT.operator.role === 'admin' ? 'Admin — can export records and manage users, zones and settings' : 'Ranger'],
-        ]),
-      ),
+        section('clock', 'This station', [
+          ['Time zone', s.timeZone],
+          ['You are', BOOT.operator.role === 'admin' ? 'Admin' : 'Ranger'],
+        ])),
       s.technical ? el('details', { class: 'panel' },
-        el('summary', { class: 'panel-head', style: null }, el('h2', {}, icon('settings'), 'Technical details (admins)')),
+        el('summary', { class: 'panel-head', style: null }, el('h2', {}, icon('settings'), 'Technical details'), icon('chevron-down', 'icon icon-sm t-caret')),
         el('div', { class: 'panel-body' }, el('dl', { class: 'facts', style: null },
+          fact('Camera ID', s.camera.id),
           fact('Camera source', s.technical.cameraSource),
+          ...(s.camera.sourceKind === 'file' ? [fact('Replay', s.camera.loopsReplay ? 'Loops continuously' : 'Plays once')] : []),
+          fact('Marked zones', s.zones.length ? s.zones.map((z) => `${z.label} (${z.vertices} points)`).join(', ') : 'None'),
           fact('Detector model', s.technical.detectorModel || '—'),
+          fact('Minimum confidence', `${Math.round(d.confidenceThreshold * 100)}%`),
+          fact('Frames analysed', `${d.sampleFps} per second`),
+          fact('Re-arming', `Zone empty for ${d.clearSeconds} s after the alert is closed`),
+          fact('Feed counts as stale', `After ${d.staleFeedSeconds} s without a frame`),
           fact('Max frame gap', `${s.technical.maxFrameGapMs} ms`),
           fact('Session length', `${s.technical.sessionHours} h`),
           fact('Secure cookies', yes(s.technical.secureCookies))),
-          el('p', { class: 'hint', style: null }, 'Credentials are never shown in the browser.'))) : null,
+          el('p', { class: 'hint', style: null }, 'Read-only: these come from the server configuration. Credentials are never shown here.'))) : null,
     );
   }
 

@@ -23,10 +23,10 @@ export function mount(main, ctx) {
   main.append(
     el('div', { class: 'page-head' },
       el('div', {}, el('h1', {}, 'Safety zones'), el('p', { class: 'sub' }, 'Places where people are. Dangerous animals near them raise alerts.')),
-      el('div', { class: 'page-actions' }, areaSel, el('button', { type: 'button', class: 'btn btn-primary', onclick: () => startNew() }, icon('plus'), 'New zone'))),
+      el('div', { class: 'page-actions zones-actions' }, areaSel, el('button', { type: 'button', class: 'btn btn-primary', onclick: () => startNew() }, icon('plus'), 'New zone'))),
     drawHint,
     el('div', { class: 'ops-grid' },
-      el('section', { class: 'panel' }, el('div', { class: 'panel-head' }, el('h2', {}, icon('map'), 'Map')), el('div', { class: 'panel-body' }, mapBox)),
+      el('section', { class: 'panel zones-map' }, el('div', { class: 'panel-head' }, el('h2', {}, icon('map'), 'Map')), el('div', { class: 'panel-body' }, mapBox)),
       el('div', { class: 'stack' }, formBox, el('section', { class: 'panel' }, el('div', { class: 'panel-head' }, el('h2', {}, icon('zone'), 'Zones')), el('div', { class: 'panel-body' }, list)))),
   );
 

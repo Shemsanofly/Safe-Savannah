@@ -28,16 +28,17 @@ export function mount(main, ctx) {
 
   main.append(
     el('div', { class: 'page-head' },
-      el('div', {}, el('h1', {}, 'History & reports'), el('p', { class: 'sub' }, 'Summaries calculated from the incidents stored on this system.')),
+      el('div', {}, el('h1', {}, 'Reports'), el('p', { class: 'sub' }, 'How incidents were handled over a period.')),
       actions),
     el('div', { class: 'filters' },
-      el('div', { class: 'filters-row' }, presetSeg),
-      el('div', { class: 'filters-row' },
-        el('div', { class: 'field' }, el('label', { for: 'h-from' }, 'From (inclusive)'), fromIn),
-        el('div', { class: 'field' }, el('label', { for: 'h-to' }, 'To (inclusive)'), toIn),
-        el('div', { class: 'field grow' }, el('span', { class: 'label' }, 'Detection source'), sourceSeg)),
-      rangeErr,
-      el('p', { class: 'hint' }, `Days run midnight to midnight in lodge time (${BOOT.timeZone}).`)),
+      el('div', { class: 'chip-scroll' }, presetSeg),
+      el('details', { class: 'more-filters', open: window.matchMedia('(min-width: 721px)').matches || undefined },
+        el('summary', {}, icon('filter', 'icon icon-sm'), el('span', {}, 'Custom dates & source')),
+        el('div', { class: 'filters-row' },
+          el('div', { class: 'field' }, el('label', { for: 'h-from' }, 'From'), fromIn),
+          el('div', { class: 'field' }, el('label', { for: 'h-to' }, 'To'), toIn),
+          el('div', { class: 'field grow' }, el('span', { class: 'label' }, 'Source'), sourceSeg))),
+      rangeErr),
     body,
   );
 
@@ -51,7 +52,7 @@ export function mount(main, ctx) {
     toIn.value = range.to;
     const listQs = qs({ from: range.from, to: range.to, source: range.source });
     clear(actions,
-      el('a', { class: 'btn', href: `#/incidents${listQs}` }, icon('incident'), 'Open in incident list'),
+      el('a', { class: 'btn', href: `#/incidents${listQs}` }, icon('incident'), 'View incidents'),
       BOOT.permissions?.canExport ? el('a', { class: 'btn btn-primary', href: `/api/incidents/export.csv${listQs}`, download: '' }, icon('download'), 'Export CSV') : null);
   }
 
@@ -90,14 +91,11 @@ export function mount(main, ctx) {
     const s = summary;
     const rangeLabel = `${fmtDay(s.range.from)} – ${fmtDay(s.range.to)}`;
     const sourceLabel = SOURCES.find((x) => x.value === (range.source || ''))?.label || 'All sources';
-    const caveat = el('div', { class: 'alert alert-info' }, icon('info'), el('div', { class: 'grow' },
-      el('strong', {}, 'How to read these numbers. '),
-      'They count records stored on this system for the selected days',
-      range.source ? '' : ', including simulated and test incidents',
-      '. They describe this workflow, not detection accuracy: missed elephants never appear here, so a low count does not mean the area was safe.'));
+    const caveat = el('p', { class: 'hint report-note' }, icon('info', 'icon icon-sm'),
+      ` Counts of stored records${range.source ? '' : ' (including simulated and test incidents)'}, by day in lodge time (${BOOT.timeZone}). They show how alerts were handled, not how many animals were missed.`);
 
     if (s.totals.incidents === 0) {
-      clear(body, caveat, el('div', { class: 'panel', style: null }, el('div', { class: 'empty' }, icon('chart'),
+      clear(body, el('div', { class: 'panel', style: null }, el('div', { class: 'empty' }, icon('chart'),
         el('strong', {}, 'No incidents were opened in this range'),
         el('p', {}, `${rangeLabel} · ${sourceLabel}. There is nothing to summarise, so no averages are shown.`))));
       return;
@@ -106,16 +104,16 @@ export function mount(main, ctx) {
     const a = s.acknowledgement;
 
     const tiles = el('div', { class: 'tiles' },
-      tile('incident', 'Incidents opened', String(t.incidents), null, `${rangeLabel}`),
-      tile('check-circle', 'Closed — verified', String(t.closed), null, pct(t.closed, t.incidents)),
-      tile('x', 'False alerts', String(t.falseAlerts), null, pct(t.falseAlerts, t.incidents)),
-      tile('clock', 'Still active', String(t.open + t.acknowledged), null, `${t.open} not yet acknowledged`, t.open ? 'urgent' : ''),
+      tile('incident', 'Opened', String(t.incidents), null, null),
+      tile('check-circle', 'Resolved', String(t.closed), null, pct(t.closed, t.incidents)),
+      tile('x', 'False alarms', String(t.falseAlerts), null, pct(t.falseAlerts, t.incidents)),
+      tile('clock', 'Still open', String(t.open + t.acknowledged), null, t.open ? `${t.open} with nobody responding` : 'All have a responder', t.open ? 'urgent' : ''),
       a.count
-        ? tile('user', 'Median time to acknowledge', ...durParts(a.medianSeconds), `From alert opening · ${a.count} acknowledged · mean ${fmtDuration(a.meanSeconds)}, longest ${fmtDuration(a.maxSeconds)}`)
-        : tile('user', 'Median time to acknowledge', '—', null, 'No acknowledged incidents in this range'),
+        ? tile('user', 'Time to respond', ...durParts(a.medianSeconds), `Typical (median) · longest ${fmtDuration(a.maxSeconds)}`)
+        : tile('user', 'Time to respond', '—', null, 'Nobody responded in this range'),
       s.resolution.count
-        ? tile('check', 'Median time to close', ...durParts(s.resolution.medianSeconds), `From alert opening · ${s.resolution.count} closed or dismissed`)
-        : tile('check', 'Median time to close', '—', null, 'No closed incidents in this range'),
+        ? tile('check', 'Time to resolve', ...durParts(s.resolution.medianSeconds), 'Typical (median)')
+        : tile('check', 'Time to resolve', '—', null, 'Nothing resolved in this range'),
     );
 
     const days = fillDays(s.range.from, s.range.to, s.perDay);
@@ -129,7 +127,7 @@ export function mount(main, ctx) {
     const maxZone = Math.max(...s.byZone.map((z) => z.n), 1);
     const bySource = Object.entries(s.bySource).map(([k, n]) => `${{ inference: 'Real detection', simulated: 'Simulated', synthetic: 'Test data' }[k] || k}: ${n}`).join(' · ');
 
-    clear(body, caveat, el('div', { class: 'section' }, tiles),
+    clear(body, el('div', { class: 'section' }, tiles),
       el('div', { class: 'cols-2 section' },
         el('section', { class: 'panel', 'aria-labelledby': 'perday-title' },
           el('div', { class: 'panel-head' }, el('h2', { id: 'perday-title' }, 'Incidents opened per day'), el('span', { class: 'muted small' }, `${rangeLabel} · ${sourceLabel}`)),
@@ -142,6 +140,7 @@ export function mount(main, ctx) {
               el('span', { class: 'bar-track', 'aria-hidden': 'true' }, sized(el('span', { class: 'bar-fill' }), z.n / maxZone)),
               el('span', { class: 'num strong' }, String(z.n))))),
             el('p', { class: 'small muted' }, `By detection source — ${bySource}.`)))));
+    body.append(caveat);
     drawChart(chartBox, days);
   }
 

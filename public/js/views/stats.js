@@ -7,7 +7,7 @@ export function mount(main, ctx) {
   const body = el('div', { 'aria-live': 'polite' });
   main.append(
     el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'Dashboard'), el('p', { class: 'sub' }, 'Activity at a glance.')),
-      el('div', { class: 'page-actions' }, seg, el('a', { class: 'btn', href: '#/history' }, icon('note'), 'Reports & CSV'))),
+      el('div', { class: 'page-actions' }, seg, el('a', { class: 'btn', href: '#/history' }, icon('note'), 'Reports'))),
     body);
 
   const renderSeg = () => clear(seg, [7, 14, 30, 90].map((d) => el('button', { type: 'button', 'aria-pressed': String(days === d), onclick: () => { days = d; renderSeg(); load(); } }, `${d} days`)));
