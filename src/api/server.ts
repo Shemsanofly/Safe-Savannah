@@ -293,7 +293,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
       return reply
         .code(401)
         .type('text/html')
-        .send(loginPage({ error: 'That operator ID and PIN did not match an active account.', operatorId: body.success ? body.data.operatorId : '' }));
+        .send(loginPage({ error: 'Staff ID or PIN is not right. Check both, or ask an admin to reset your PIN.', operatorId: body.success ? body.data.operatorId : '' }));
     }
     failedLogins = 0;
     // +1 ms so a session issued in the same millisecond as a PIN reset is still accepted.

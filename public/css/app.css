@@ -1302,3 +1302,27 @@ details.panel > summary::-webkit-details-marker { display: none; }
   .zones-actions .btn { flex: none; }
   .zones-map .map { height: 260px; }
 }
+
+/* ===================== staff login ===================== */
+.login-brand h1 { margin-top: clamp(24px, 5vh, 48px); }
+.login-card-head h2 { font-size: 1.6rem; }
+.pin-control input { padding-right: 76px; }
+.pin-toggle { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); min-width: 60px; min-height: 38px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: .82rem; font-weight: 700; color: var(--forest-700); cursor: pointer; }
+.pin-toggle:hover { background: var(--forest-50); }
+.login-card input[aria-invalid="true"] { border-color: var(--red-600); }
+.login-panel > .traveller-link { margin-top: 14px; background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.16); color: #f6f1e4; backdrop-filter: blur(6px); }
+.login-panel > .traveller-link:hover { color: #fff; background: rgba(255,255,255,.12); }
+.login-panel > .traveller-link small { color: #c9d7cd; }
+.login-panel > .traveller-link > .icon:last-child { margin-left: auto; }
+@media (max-width: 900px) {
+  .login { gap: 18px; padding: 18px 16px 28px; }
+  .brand-mark { font-size: 1.15rem; }
+  .brand-mark .logo { width: 32px; height: 32px; }
+  .login-brand h1 { margin-top: 18px; font-size: clamp(1.6rem, 6.4vw, 2.2rem); }
+  .login-brand .lede { display: none; }
+  .login-panel { width: 100%; max-width: 460px; justify-self: center; }
+  .login-card { padding: 22px 18px; gap: 16px; }
+}
+@media (max-width: 900px) { .login-brand { width: 100%; max-width: 460px; justify-self: center; align-self: start; } }
+@media (min-width: 600px) and (max-width: 900px) { .login { padding-top: 48px; } }
+@media (max-width: 900px) { .login { align-content: start; } }

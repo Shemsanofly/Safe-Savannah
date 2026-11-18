@@ -50,22 +50,20 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
   <img class="login-scene" src="/static/img/savanna.svg" alt="" aria-hidden="true">
   <div class="login-scrim" aria-hidden="true"></div>
   <section class="login-brand" aria-labelledby="brand-title">
-    <p class="brand-mark">${icon('logo', 'logo')}<span>Safe Savannah <em>AI</em></span></p>
-    <p class="eyebrow">Tanzania · National parks &amp; safari lodges</p>
+    <p class="brand-mark">${icon('logo', 'logo')}<span>Safe Savannah</span></p>
     <h1 id="brand-title">See wildlife risk early.<br>Respond together.</h1>
-    <p class="lede">AI camera alerts, geofenced safety zones and tourist SOS in one place — working alongside, never instead of, your radio procedure.</p>
+    <p class="lede">Camera alerts, safety zones and tourist SOS on one live map — alongside your radio, never instead of it.</p>
     <ul class="login-points">
-      <li>${icon('cpu')}<span><strong>Smart detection</strong>Risk scored by species, distance and who is nearby</span></li>
-      <li>${icon('siren')}<span><strong>Tourist SOS</strong>From the app, a basic phone (USSD) or a call</span></li>
-      <li>${icon('map')}<span><strong>One live map</strong>Every alert and emergency, where it happens</span></li>
+      <li>${icon('paw')}<span><strong>Wildlife alerts</strong>Risk by species, distance and who is nearby</span></li>
+      <li>${icon('siren')}<span><strong>Tourist SOS</strong>From the app, a basic phone or a call</span></li>
+      <li>${icon('map')}<span><strong>One live map</strong>Every alert, where it happens</span></li>
     </ul>
   </section>
   <section class="login-panel">
     <form method="post" action="/login" class="login-card" novalidate data-login>
       <div class="login-card-head">
-        <span class="login-badge">${icon('shield', 'icon icon-sm')} Staff</span>
-        <h2>Welcome back</h2>
-        <p class="muted">Rangers and administrators sign in with the ID and PIN from your park admin.</p>
+        <h2>Staff sign in</h2>
+        <p class="muted">For rangers and admins.</p>
       </div>
       ${error ? `<div class="alert alert-error" role="alert" id="login-error">${icon('alert')}<span>${esc(error)}</span></div>` : ''}
       <div class="field">
@@ -74,17 +72,17 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
       </div>
       <div class="field">
         <label for="pin">PIN</label>
-        <div class="input-icon">${icon('key')}<input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required ${operatorId ? 'autofocus' : ''}></div>
-        <p class="hint">4–12 digits. Forgotten it? Ask an admin to reset it.</p>
+        <div class="input-icon pin-control">${icon('key')}<input id="pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" required aria-describedby="pin-hint" ${operatorId ? 'autofocus' : ''}><button type="button" class="pin-toggle" aria-controls="pin" aria-pressed="false" aria-label="Show PIN">Show</button></div>
+        <p class="hint" id="pin-hint">Forgot it? Ask an admin to reset it.</p>
       </div>
       <button type="submit" class="btn btn-primary btn-lg btn-block">${icon('login')}<span>Sign in</span></button>
-      <a class="traveller-link" href="/t">
-        <span class="traveller-icon">${icon('globe')}</span>
-        <span><strong>Travelling with us?</strong><small>Open the traveller safety app — alerts, SOS and guidance in English &amp; Kiswahili</small></span>
-        ${icon('chevron-right')}
-      </a>
     </form>
-    <p class="login-foot">${icon('shield', 'icon icon-sm')} Sessions end after a shift or when an admin resets your PIN.</p>
+    <a class="traveller-link" href="/t">
+      <span class="traveller-icon">${icon('globe')}</span>
+      <span><strong>Travelling with us?</strong><small>Open the traveller app</small></span>
+      ${icon('chevron-right')}
+    </a>
+    <p class="login-foot">${icon('shield', 'icon icon-sm')} You are signed out after your shift or a PIN reset.</p>
   </section>
 </main>
 <script type="module" src="/static/js/login.js"></script>`,
