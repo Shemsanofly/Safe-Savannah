@@ -11,9 +11,11 @@ no CDN). Leaflet is served locally; only map tiles need internet.
 
 | Interface | Who | Highlights |
 |---|---|---|
-| **Traveller app** `/t` | Tourists (mobile-first, English / Kiswahili) | Register trip and destination · wildlife alerts for their area with what to do · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with live status: Received → Ranger responding → Resolved · share location · safety guidelines and phrases |
-| **Ranger console** `/` | Rangers | **Operations map** (zones, cameras, incidents, recent detections) with a priority queue (SOS first, then risk) · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · wildlife detections log · **Check a photo** (AI analysis) · on-duty toggle |
-| **Admin** (same console, extra screens) | Administrators | Dashboard statistics · **Safety zones** geofence editor (click to draw) · People (rangers with phone/area/on-duty, admins, tourist accounts) · Reports + CSV · settings · demo scenarios |
+| **Traveller app** `/t` | Tourists (English / Kiswahili) | Two-step sign-up · Home with one clear safety status and what to do · wildlife alerts for their area · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with a live tracker: Received → Ranger responding → Resolved · share location · safety tips and phrases |
+| **Ranger console** `/` | Rangers | **Live map** with a priority list (SOS first, then risk) and one-tap "I'm responding" · incidents with search and filters · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · detections log · **Check a photo** (AI analysis) · on-duty indicator |
+| **Admin** (same console, extra screens) | Administrators | Dashboard · **Safety zones** editor (click to draw) · **People** (rangers, admins and tourist accounts) · Reports + CSV · settings · demo scenarios |
+
+Every screen works on phones and computers: see [Screens](#screens).
 
 > Safe Savannah can only warn, never reassure. Cameras miss animals; a camera that is not live sees nothing; a
 > quiet map never means an area is safe. Risk weights are transparent demo defaults to review with rangers —
@@ -77,6 +79,87 @@ npm run dev
 stylesheet is missing. Check what is running at http://127.0.0.1:8080/healthz (it reports the version), and look
 for the `Safe Savannah v… — staff: … · tourists: …` line in the log. After pulling, run `npm run seed` once to
 load the demo data.
+
+## Screens
+
+All three interfaces are built for **phones first** and spread out on larger screens. Phones get a bottom tab
+bar; computers get a top bar (traveller) or side menu (staff); tablets get a compact icon rail. Long lists
+become compact cards on phones, and less-used filters fold away under **Filters & sort**. Screenshots below use
+the seeded demo data; "Simulated" and "Demo" labels are shown exactly as in the app.
+
+### Signing in
+
+| Staff (`/login`) | Traveller (`/t`) |
+|---|---|
+| <img src="docs/screenshots/staff-login-phone.jpg" width="240" alt="Staff sign-in on a phone"> | <img src="docs/screenshots/traveller-signin-phone.jpg" width="240" alt="Traveller sign-in on a phone"> |
+
+- **Staff sign in:** staff ID and PIN, with a Show/Hide PIN button. A wrong entry says "Staff ID or PIN is not
+  right" and keeps the ID filled in. A link below the card opens the traveller app.
+- **Traveller:** one card with **Sign in** and **Create account** tabs, the EN/SW switch in the header, and the
+  emergency line under the card. Creating an account takes two steps: *Your account* (name, phone, PIN), then
+  *Your trip* (destination, lodge, dates, group size).
+
+<img src="docs/screenshots/staff-login-desktop.jpg" width="720" alt="Staff sign-in on a computer">
+
+### Traveller app
+
+| Home | Alerts | SOS | SOS tracker |
+|---|---|---|---|
+| <img src="docs/screenshots/traveller-home-phone.jpg" width="190" alt="Traveller home with a wildlife warning"> | <img src="docs/screenshots/traveller-alerts-phone.jpg" width="190" alt="Wildlife alerts"> | <img src="docs/screenshots/traveller-sos-phone.jpg" width="190" alt="SOS form"> | <img src="docs/screenshots/traveller-sos-tracker-phone.jpg" width="190" alt="Live SOS tracker"> |
+
+| Screen | What it shows |
+|---|---|
+| **Home** | A trip card (camp, dates, group), then **one safety status**: *All clear*, *Rangers are watching wildlife nearby*, or a *Warning* / *Danger* card with the top three things to do. Below: a large **SOS** button and quick actions (share location, call the emergency line, safety tips). An open SOS shows its tracker at the top. |
+| **Alerts** | *Happening now* first, each with a Danger / Warning / Advisory label and a "What to do" list; earlier alerts (last 48 h) fold up. Exact animal positions are never shown. |
+| **SOS** | Three steps: pick the emergency type, add details if you want, then **Send SOS** (with a confirmation). After sending, a live tracker shows *Received → [ranger] is responding → Resolved* with times, and a Call button. |
+| **Safety** | Guidance by topic (elephants, big cats, buffalo, hippos, camp at night, vehicle breakdown) and Kiswahili phrases. |
+| **My trip** | Edit destination, lodge, dates, group, emergency contact and SMS alerts; account panel with sign-out. |
+
+<img src="docs/screenshots/traveller-home-desktop.jpg" width="720" alt="Traveller home on a computer">
+
+### Ranger console
+
+| Live map (phone) | Incidents (phone) | Incident (phone) |
+|---|---|---|
+| <img src="docs/screenshots/ranger-live-map-phone.jpg" width="240" alt="Live map incident list on a phone"> | <img src="docs/screenshots/ranger-incidents-phone.jpg" width="240" alt="Incident list on a phone"> | <img src="docs/screenshots/ranger-incident-phone.jpg" width="240" alt="Incident detail on a phone"> |
+
+| Screen | What it is for |
+|---|---|
+| **Live map** | Open alerts and SOS, most urgent first. Each card shows the number, type, age, title, risk and status, with **I'm responding** on the card. On phones an **Incidents / Map** switch shows one at a time; computers show both. Admins can run demo scenarios here. |
+| **Incidents** | Search plus status chips (All, Active, Pending, Responding, Resolved, False alarms). Type, sort, area, risk and dates are under **Filters & sort**. Phones show compact cards; computers show a table. Admins can export CSV. |
+| **Incident detail** | A one-line summary, the title and a **Pending → Responding → Resolved** tracker with the responder's name and times. **I'm responding** comes first; once you own it, tabs for **Log handoff**, **Resolve**, **False alarm** and **Add note**. Details (photo, reporter with tap-to-call, why this risk level, map) and the activity log follow. |
+| **Detections** | Every animal sighting with its risk and nearest zone. |
+| **Check a photo** | Upload a wildlife photo; the AI model (or a labelled simulated detection) scores the risk. |
+| **Gate camera** | The live camera feed with zone and detection overlays. |
+| **Settings** / **Guide** | How the station is set up (read-only), and handling an alert in four steps. |
+
+The header always shows how many incidents are **pending** (it links to them) and your duty state: a green dot
+on your account icon, and an **On duty / Off duty** label on computers. Switch it from the account menu.
+
+<img src="docs/screenshots/ranger-live-map-desktop.jpg" width="720" alt="Live map on a computer">
+
+<img src="docs/screenshots/ranger-incident-desktop.jpg" width="720" alt="Incident detail on a computer">
+
+### Admin screens
+
+| People (phone) | Reports (phone) |
+|---|---|
+| <img src="docs/screenshots/admin-people-phone.jpg" width="240" alt="People list on a phone"> | <img src="docs/screenshots/admin-reports-phone.jpg" width="240" alt="Reports on a phone"> |
+
+| Screen | What it is for |
+|---|---|
+| **Dashboard** | Five numbers (tourists today, rangers on duty, detections, SOS reports, still open), response times and detections by species, over 7–90 days. |
+| **Safety zones** | Pick an area, click **New zone** and click the map to draw it. Zones are a compact list (coloured dot = sensitivity); click one to edit or deactivate it. |
+| **People** | **Rangers & admins:** one row each with role, area, phone (flagged if missing) and duty state. **Edit** opens a short form (role, phone, area, on duty); **Reset PIN** and **Deactivate** are in the ⋯ menu; **Add a ranger or admin** folds away. **Tourists:** searchable, with *On trip / Upcoming / Trip ended* status, tap-to-call, their SOS history and deactivate/reactivate. |
+| **Reports** | Pick Today or the last 7/30/90 days (custom dates and source under a fold). Shows opened, resolved, false alarms, still open, and typical time to respond and resolve, with a per-day chart and incidents by zone. **Export CSV**. |
+| **Settings** | Camera, detection rule and station basics; timings and other details under **Technical details**. |
+
+<img src="docs/screenshots/admin-people-desktop.jpg" width="720" alt="People on a computer">
+
+<img src="docs/screenshots/admin-dashboard-desktop.jpg" width="720" alt="Dashboard on a computer">
+
+To refresh these images after a UI change, run the app with seeded data and capture new ones at the same sizes
+(phone: iPhone 13 viewport; computer: 1366×860).
 
 ## Africa's Talking
 
@@ -397,19 +480,7 @@ ranger needs to act. Messages (SMS, USSD, voice) are **not shown in the web app*
 Talking and appear on the phone or in the AT sandbox simulator. If `AT_API_KEY` is missing, the server log
 says so at start-up.
 
-| Screen | What it is for |
-|---|---|
-| **Live map** | Open alerts and SOS on the map, with a priority queue and one-click "I'm responding". Admins can run demo scenarios here. |
-| **Incidents** | Search and filter (type, risk, area, status, date) every alert and emergency, current and past. Admins can export CSV. |
-| **Incident detail** | Photo, detection facts, owner, actions (**Log handoff**, **Resolve**, **False alarm**, **Add note**) and a short activity log. |
-| **Detections** | Every animal sighting and its risk. |
-| **Check a photo** | Upload a wildlife photo; the AI model (or a labelled simulated detection) scores the risk. |
-| **Gate camera** | The live camera feed with zone and detection overlays. |
-| **Dashboard** (admin) | Five headline numbers, response times and detections by species. Links to reports and CSV. |
-| **Safety zones** (admin) | A compact list of zones; click one (or the map) to edit, or draw a new one. |
-| **People** (admin) | Rangers and registered tourists. |
-| **Settings** | A read-only view of the camera, detection rule and time zone; operator management for admins. |
-| **Guide** | Handling an alert in four steps, plus what each label means. |
+Every screen is described in [Screens](#screens). This section covers the gate camera.
 
 The camera panel shows one of four states: **Live**, **Reconnecting** (the worker is retrying a failed
 source), **Stale** (connected but no new frames) or **Offline** (the worker is not reporting). Anything other
@@ -422,7 +493,7 @@ than Live shows the zone as **UNKNOWN**. Feed controls work as follows:
 
 Keyboard users get a skip link, visible amber focus rings, and arrow-key tabs on incidents. Moving to a new
 screen puts focus on its heading. The layout adapts to phones (bottom tab bar), tablets (icon rail) and
-desktops, and it respects reduced-motion settings.
+computers (side menu), and it respects reduced-motion settings.
 
 ### Roles
 
@@ -456,11 +527,11 @@ admin cannot be removed.
 1. Show the camera view: the elephant is **outside** the dashed polygon, so no alert.
 2. The elephant crosses. After about 3 frames, the **SS-0xx** card opens and the SMS arrives in the Africa's
    Talking sandbox simulator (not in the web app). The snapshot shows the triggering box.
-3. Click **Acknowledge**, open the incident, and use **Log handoff** (Radio, "Guide Juma ch.3, guests held at
-   lodge").
+3. On the Live map, press **I'm responding** on the card, open the incident, and use **Log handoff** (Radio,
+   "Guide Juma ch.3, guests held at lodge").
 4. Messages keep working through outages: if the network drops, SMS wait in the outbox and are retried; ones
    older than `SMS_FRESHNESS_SECONDS` are marked **expired**, not sent late.
-5. Close the incident with what was verified. The zone stays *awaiting clear* until it has been empty for 10 s.
+5. **Resolve** the incident with what was verified. The zone stays *awaiting clear* until it has been empty for 10 s.
 
 ## Acceptance tests
 
