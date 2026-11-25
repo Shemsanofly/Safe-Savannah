@@ -3,6 +3,7 @@ import { unlink } from 'node:fs/promises';
 import type { AppConfig } from '../config.js';
 import { withTx, type Db, type DbClient } from '../db/pool.js';
 import { DomainError } from '../store/events.js';
+import { recordGuideEntry } from '../store/tours.js';
 import { demoFacePortraitPath } from '../paths.js';
 import { cosine, decryptFace, encryptFace, enrollmentVector, FACE_MODEL_ID, rankFaces } from './biometrics.js';
 import { dispatchGate, expireSimulatedCycles, gateState, verifyCurrentAuthorization, type GateCommand, type GateTransport } from './controller.js';
@@ -240,7 +241,9 @@ export class FaceGateService {
       await c.query(`INSERT INTO gate_open_commands (id,challenge_id,attempt_id,zone_id,staff_id,profile_version,actor_id,tourist_count,mode)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [commandId, challenge.id, attemptId, challenge.zone_id, profile.staff_id, profile.version, actorId, challenge.tourist_count, this.cfg.GATE_CONTROLLER_MODE]);
       await c.query("UPDATE face_gate_challenges SET phase = 'complete' WHERE id = $1", [challenge.id]);
-      return { state: 'complete', commandId, guide, touristCount: challenge.tourist_count, instruction: 'Guide recognized and attraction access verified.' };
+      // Link the entry to the guide's tour group for today, if any (never blocks the entry).
+      const tourGroup = await recordGuideEntry(c, { staffId: profile.staff_id, zoneId: challenge.zone_id, attemptId: Number(attemptId), declared: challenge.tourist_count, method: 'face', timeZone: this.cfg.TIMEZONE });
+      return { state: 'complete', commandId, guide, touristCount: challenge.tourist_count, tourGroup, instruction: 'Guide recognized and attraction access verified.' };
     });
     if ('commandId' in outcome && outcome.commandId) await dispatchGate(this.db, this.cfg, outcome.commandId, this.transport);
     return { ...outcome, faceBox: observation.box ?? null, gate: await gateState(this.db, this.cfg, existing.zone_id) };

@@ -15,8 +15,9 @@ no CDN). Leaflet is served locally; only map tiles need internet.
 |---|---|---|
 | **Traveller app** `/t` | Tourists (English, Kiswahili, French, German, Italian, Spanish, Chinese) | Two-step sign-up · Home with one clear safety status and what to do · wildlife alerts for their area · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with a live tracker: Received → Ranger responding → Resolved · share location · safety tips and phrases |
 | **Ranger console** `/` | Rangers | **Live map** with a priority list (SOS first, then risk) and one-tap "I'm responding" · incidents with search and filters · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · detections log · **Check a photo** (AI analysis) · on-duty indicator |
-| **Front desk** `/` (lodge staff) | Lodge and camp reception | Guests staying tonight · wildlife alerts at the property · live **"Are you safe?" roll call** · guest SOS · printable check-in QR code |
-| **Admin** (same console, extra screens) | Administrators | Dashboard · **Lodges & camps** · **Safety zones** editor (click to draw) · **People** (rangers, admins, front desks and tourist accounts) · Reports + CSV · settings · demo scenarios |
+| **Front desk** `/` (lodge staff) | Lodge and camp reception | Guests staying tonight · wildlife alerts at the property · live **"Are you safe?" roll call** · guest SOS · printable check-in QR code · lodge report |
+| **Tour groups** `/` (tour operators, guides) | Tour operator offices and their guides | Plan groups of registered travellers with a guide · the guide's gate entry puts the group "in the park" · wildlife alerts near their groups · guests' safety status |
+| **Admin** (same console, extra screens) | Administrators | Dashboard · **Tourism report** · **Tour operators** · **Lodges & camps** · **Safety zones** editor (click to draw) · **People** (rangers, admins, front desks and tourist accounts) · Reports + CSV · settings · demo scenarios |
 
 Every screen works on phones and computers: see [Screens](#screens).
 
@@ -57,6 +58,7 @@ and zone outlines are illustrative.**
 |---|---|
 | http://127.0.0.1:8080 (staff) | ranger `juma` / PIN `2468` (also `neema`, `baraka`, `rehema`, `saning`) · admin: your first operator, or `admin` / `1357` if the seed created one |
 | http://127.0.0.1:8080 (front desk) | `desk1` / PIN `3579` (Seronera tented camp; also `desk2` Riverside lodge, `desk3` Crater-rim lodge) |
+| http://127.0.0.1:8080 (tour operator) | office `tours1` / PIN `4680` (Kilima Safaris) · guide `guide1` / PIN `4680` (Elias Kimaro, gate access at Kopjes walking trail) |
 | http://127.0.0.1:8080/t (traveller) | `+255765000201` / PIN `1234` (also `…202`–`…210`; `…203`, `…205` and `…208` use Kiswahili, `…206` Italian and `…207` French). Six demo guests are staying at Seronera tented camp. |
 
 Demo phone numbers are made up. The app **never** sends to demo people through a **live** Africa's Talking
@@ -274,6 +276,77 @@ English, Kiswahili, French, German, Italian, Spanish and Chinese (Simplified).
 |---|---|---|
 | <img src="docs/screenshots/guest-signin-german-phone.jpg" width="190" alt="Sign-in page in German"> | <img src="docs/screenshots/guest-are-you-safe-french-phone.jpg" width="190" alt="Are you safe? in French"> | <img src="docs/screenshots/guest-alerts-chinese-phone.jpg" width="190" alt="Alerts in Chinese"> |
 
+## Tour operators and guides
+
+Tour operators (safari companies) and their guides get their own accounts, limited like front desks to their
+own screen: **Tour operator** for the office, **Guide** for each guide. Admins add the company under
+**Tour operators**, then the accounts in Staff management, and give each guide gate access to the attractions
+they lead groups to.
+
+1. **The office plans a group** for a day: name, guide, attraction, activity, time out of the park, and the
+   travellers by the phone number they registered in the Safe Savannah app (numbers not registered yet are
+   listed back).
+2. **At the attraction gate the guide is verified** (face check, or badge and PIN), with the number of
+   tourists declared. The guide's group for today is recorded as **in the park** there, with how it was
+   verified and *3 declared, 2 registered*. A gate with no camera can record the entry by radio from the
+   office screen instead. The group link never blocks or changes the gate decision.
+3. **Its travellers are checked out on the activity** (see *Going out*): the risk engine counts them as
+   people present, the rangers' map shows the head count, their lodges list them as out, and travellers see
+   **My tour** in the app: the company, where the group is, the guide's name with a Call button.
+4. **Rangers see tour groups on an incident** in that area, with the guide's phone. The office sees
+   **Wildlife alerts near your groups** and each traveller's safety status (SOS, roll call), and marks the
+   group **back**. A group 30 minutes late turns red.
+
+Privacy: travellers see which company added them and what it can see, and can **leave the group** at any
+time. Tour operator and guide accounts cannot open any ranger screen or data.
+
+![Tour operator office](docs/screenshots/tour-operator-desktop.jpg)
+
+| Guide (phone) | My tour (traveller) | Ranger: groups on an incident |
+|---|---|---|
+| <img src="docs/screenshots/guide-groups-phone.jpg" width="190" alt="Guide's groups"> | <img src="docs/screenshots/guest-tour-phone.jpg" width="190" alt="My tour in the traveller app"> | <img src="docs/screenshots/ranger-incident-tour-groups-desktop.jpg" width="380" alt="Tour groups on a ranger incident"> |
+
+**Demo:** sign in as `tours1` / `4680`: *Becker & Watanabe walking safari* is planned for today with guide
+Elias. As an admin, open `/#/access-manual` (**Gate permissions & manual review**), press **Start gate
+camera**, then check *Kopjes walking trail*, staff ID `guide1`, PIN `4680`, **Tourists with this guide** `3`,
+tick the badge check and **Verify staff access** (or use **In the park** on the office screen). The
+office now shows the group in the park; Hannah (`+255765000209`) sees **My tour**. Run **Lion near tented
+camp** and open the incident: the group and the guide's phone are listed.
+
+## Today in the park
+
+Travellers' Home shows **Today in the park**: the species seen today in their park area, how often, and
+roughly when (this morning, this afternoon…), in their language.
+
+- **Never live and never a place.** A sighting appears only a while after it happened (2 hours by default;
+  20 minutes while the demo simulator runs; `SIGHTINGS_DELAY_MINUTES`), and only the park area is named,
+  never a zone or a position.
+- **Protected species are never listed**, whatever the source: rhino, pangolin, wild dog, chimpanzee, gorilla
+  (`src/store/sightings.ts`). Low-confidence detections (under 50%) are left out.
+- Simulated sightings are labelled.
+
+<img src="docs/screenshots/guest-today-in-park-phone.jpg" width="190" alt="Today in the park">
+
+## Lodge and tourism report
+
+**Tourism report** (admins: every partner lodge, or one; front desks: **Report**, their own lodge) for the
+last 7, 30 or 90 days, with a **Spreadsheet** (CSV) download:
+
+- **Guests:** people staying now, arrivals, guest-nights (people × nights), languages, countries, park areas
+  and activities checked out.
+- **Safety at each lodge:** wildlife alerts at the property and high or critical alerts in its area; roll
+  calls with **the share of guests accounted for** (answered, or confirmed by the desk), how many needed
+  help, and the median time until every guest had answered; guest SOS and the median ranger response time.
+- **Guest requests:** night escorts and how fast they were accepted; activities and how many came back late.
+- **Recent roll calls** one by one (answers in the app, by SMS or confirmed by the desk), and **tour
+  operators**: groups, gate entries by face, badge or radio, people declared, groups back late.
+
+![Tourism report](docs/screenshots/tourism-report-desktop.jpg)
+
+<img src="docs/screenshots/lodge-report-phone.jpg" width="190" alt="Lodge report on a phone">
+
+The demo seed adds a few past roll calls and night escorts at each lodge so the report is not empty.
+
 ## Africa's Talking
 
 | Channel | What it does | How it runs here |
@@ -380,13 +453,14 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 
 ## Security and roles
 
-| | Tourist | Front desk | Ranger | Admin |
-|---|---|---|---|---|
-| Own trip, alerts for own area, SOS, status, check in, answer roll calls | ✓ | | | |
-| Own lodge: guests tonight, alerts, guest SOS, roll calls, check-in QR | | ✓ | | ✓ (any lodge) |
-| Map, incidents, detections, photo check, set own on-duty | | | ✓ | ✓ |
-| Respond / resolve / log handoffs | | | ✓ | ✓ |
-| Lodges, zones, people, tourist accounts, CSV export, scenarios, technical settings | | | | ✓ |
+| | Tourist | Front desk | Tour operator / guide | Ranger | Admin |
+|---|---|---|---|---|---|
+| Own trip, alerts for own area, SOS, status, check in, answer roll calls, leave a tour group | ✓ | | | | |
+| Own lodge: guests tonight, alerts, guest SOS, roll calls, check-in QR, lodge report | | ✓ | | | ✓ (any lodge) |
+| Own company's tour groups (guides: their own groups; only the office plans) | | | ✓ | | ✓ (any) |
+| Map, incidents, detections, photo check, set own on-duty | | | | ✓ | ✓ |
+| Respond / resolve / log handoffs | | | | ✓ | ✓ |
+| Lodges, tour operators, zones, people, tourist accounts, tourism report, CSV export, scenarios, settings | | | | | ✓ |
 
 - Separate signed, httpOnly, SameSite=strict cookies for staff and tourists.
 - PINs are hashed with scrypt.
@@ -412,6 +486,9 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 | `GET /api/public/lodges/:code`, `POST /api/tourist/checkin`, `POST /api/tourist/checks/:id` | public / tourist | Look up a check-in code, check in, answer a roll call (`safe` \| `help`; help opens an SOS) |
 | `GET /api/lodge`, `/api/lodge/pulse`, `/api/lodge/qr.svg`, `POST /api/lodge/checks`, `…/checks/:id/responses/:touristId`, `…/checks/:id/close` | front desk, admin (`?lodge=`) | Front-desk view, header status, check-in QR, start / confirm safe / end a roll call |
 | `GET /api/tourist/places`, `POST /api/tourist/escort`, `…/escort/:id/cancel`, `POST /api/tourist/activities`, `…/activities/:id/back\|cancel` | tourist | Places to go out to, ask for or cancel a night escort, check out on an activity and back in |
+| `GET /api/lodge/report`, `/api/lodge/report.csv` (`?days=&lodge=`) | front desk (own lodge), admin | Lodge and tourism report |
+| `GET /api/tours`, `/api/tours/pulse`, `POST /api/tours/groups`, `…/groups/:id/members`, `…/members/:touristId/remove`, `…/groups/:id/enter\|back\|cancel` | tour operator, guide (read), admin | Tour groups: plan, add travellers, record a radio entry, mark back |
+| `GET/POST /api/tours/operators`, `POST /api/tourist/tour-groups/:id/leave` | admin / tourist | Tour operators; a traveller leaves a group |
 | `POST /api/lodge/escorts/:id/accept` (`escort_name`), `…/escorts/:id/done`, `POST /api/lodge/activities`, `…/activities/:id/back\|cancel` | front desk | Handle escorts; log an activity for an in-house guest and mark the group back |
 | `GET/POST/PATCH /api/lodges`, `POST /api/lodges/:id/code` | admin | Lodges and new check-in codes |
 | `POST /webhooks/sms-status`, `/webhooks/sms-inbound`, `/webhooks/ussd`, `/webhooks/voice` | provider (token) | Africa's Talking callbacks (delivery reports, roll-call replies, USSD, voice) |
@@ -422,7 +499,7 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 npm test
 ```
 
-145 tests. `test/platform.test.ts` covers:
+152 tests. `test/platform.test.ts` covers:
 
 - geofencing and the risk engine (species, distance, occupancy, confidence, harmless species);
 - detection → incident → ranger/tourist SMS and voice (atomic, deduplicated, escalation);
@@ -435,7 +512,9 @@ npm test
 
 `test/hospitality.test.ts` covers lodges, QR check-in, the roll call (including SMS replies in every language)
 and the all clear; `test/guestPlans.test.ts` covers night escorts, activity check-ins and their effect on risk;
-`test/i18n.test.ts` checks that every language has every species, safety step, alert and SMS text.
+`test/i18n.test.ts` checks that every language has every species, safety step, alert and SMS text;
+`test/tours.test.ts` covers tour groups and the gate link, partner access limits, Today in the park
+(delay, area, protected species) and the tourism report.
 
 The earlier suites still cover the gate camera, the outbox and the dashboard API.
 

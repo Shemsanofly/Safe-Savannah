@@ -108,6 +108,11 @@ const EnvSchema = z.object({
   DEMO_CONTROLS: bool.default(true),
   /** Lodge-local time zone for SMS/USSD/dashboard times. */
   TIMEZONE: z.string().default('Africa/Dar_es_Salaam'),
+  /**
+   * "Today in the park" shows guests the species seen today, this many minutes after the sighting
+   * (never live, so it cannot lead anyone to an animal). Default: 120, or 20 while the simulator runs.
+   */
+  SIGHTINGS_DELAY_MINUTES: z.coerce.number().int().min(0).max(1440).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 

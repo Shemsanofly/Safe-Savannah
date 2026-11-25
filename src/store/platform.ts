@@ -9,6 +9,8 @@ import { enqueue, type Job } from './outboxJobs.js';
 import { rollCallReasons, rollCallsForIncident, touristChecks } from './hospitality.js';
 import { alertContent, catalog, LANGS, speciesName } from '../domain/i18n.js';
 import { ACTIVITY_LABEL, liveActivities, touristActivity, touristEscort } from './guestPlans.js';
+import { touristTourGroup } from './tours.js';
+import { todayInThePark } from './sightings.js';
 
 // ============================================================ places
 export interface AreaRow { id: string; name: string; region: string; center_lat: number; center_lng: number; zoom: number }
@@ -563,7 +565,7 @@ export async function mapData(db: Queryable, opts: { areaId?: string; hours?: nu
   return {
     areas, zones, cameras, incidents: incidents.rows.map((i: { id: number }) => ({ ...i, ref: eventRef(i.id) })), detections: detections.rows,
     // Guests checked in to an activity (shown to rangers as groups on the map; names stay with the lodge).
-    groupsOut: groupsOut.map((a) => ({ id: a.id, zone_id: a.zone_id, zone_name: a.zone_name, kind: a.kind, people: a.people, ends_at: a.ends_at, status: a.status, lodge_name: a.lodge_name })),
+    groupsOut: groupsOut.map((a) => ({ id: a.id, zone_id: a.zone_id, zone_name: a.zone_name, kind: a.kind, people: a.people, ends_at: a.ends_at, status: a.status, lodge_name: a.lodge_name, tour_operator_name: a.tour_operator_name })),
   };
 }
 
@@ -593,8 +595,8 @@ export async function listDetections(db: Queryable, f: z.infer<typeof DetectionF
 }
 
 /** Everything a tourist's home screen needs. */
-export async function touristFeed(db: Queryable, t: TouristRow) {
-  const [area, alerts, active, sos, checks, escort, activity] = await Promise.all([
+export async function touristFeed(db: Queryable, t: TouristRow, timeZone = 'Africa/Dar_es_Salaam', sightingsDelayMinutes = 120) {
+  const [area, alerts, active, sos, checks, escort, activity, tourGroup, today] = await Promise.all([
     db.query<AreaRow>('SELECT * FROM areas WHERE id = $1', [t.area_id]),
     db.query(
       `SELECT a.id, a.level, a.title_en, a.title_sw, a.body_en, a.body_sw, a.actions_en, a.actions_sw, a.place, a.created_at, a.expires_at, a.event_id,
@@ -616,6 +618,8 @@ export async function touristFeed(db: Queryable, t: TouristRow) {
     touristChecks(db, t.id),
     touristEscort(db, t.id),
     touristActivity(db, t.id),
+    touristTourGroup(db, t.id, timeZone),
+    todayInThePark(db, t.area_id, { timeZone, delayMinutes: sightingsDelayMinutes }),
   ]);
   return {
     area: area.rows[0] ?? null,
@@ -629,6 +633,10 @@ export async function touristFeed(db: Queryable, t: TouristRow) {
     checks,
     escort,
     activity,
+    // A tour operator's group the traveller is in today (they can leave it).
+    tourGroup,
+    // Species seen today in the area (delayed, no places, protected species left out).
+    today,
   };
 }
 

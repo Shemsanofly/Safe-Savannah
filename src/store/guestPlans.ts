@@ -21,7 +21,7 @@ export const EscortInputSchema = z
   .refine((e) => e.to_key !== 'other' || !!e.to_text, { message: 'Say where you want to go', path: ['to_text'] });
 
 export interface EscortRow {
-  id: number; tourist_id: number; lodge_id: string; from_place: string; to_key: string; to_text: string | null; people: number; note: string | null;
+  id: number; tourist_id: number | null; tour_group_id?: number | null; lodge_id: string; from_place: string; to_key: string; to_text: string | null; people: number; note: string | null;
   status: 'requested' | 'accepted' | 'done' | 'cancelled'; escort_name: string | null; accepted_at: Date | null; done_at: Date | null; created_at: Date;
 }
 const ESCORT_COLS = 'id, tourist_id, lodge_id, from_place, to_key, to_text, people, note, status, escort_name, accepted_at, done_at, created_at';
@@ -104,7 +104,7 @@ export const ActivityInputSchema = z.object({
 });
 
 export interface ActivityRow {
-  id: number; tourist_id: number; lodge_id: string | null; area_id: string; zone_id: number; kind: string; people: number;
+  id: number; tourist_id: number | null; tour_group_id?: number | null; lodge_id: string | null; area_id: string; zone_id: number; kind: string; people: number;
   starts_at: Date; ends_at: Date; returned_at: Date | null; cancelled_at: Date | null; created_by: string; created_at: Date;
   zone_name?: string; status?: string;
 }
@@ -162,9 +162,10 @@ export async function endActivity(db: Queryable, id: number, scope: { touristId?
 /** Groups out in an area now (started, not back, at most 3 hours past their return time). Used by the risk engine and the map. */
 export async function liveActivities(db: Queryable, areaId: string | null) {
   return (
-    await db.query<ActivityRow & { zone_name: string; tourist_name: string; lodge_name: string | null }>(
-      `SELECT a.*, z.name AS zone_name, t.name AS tourist_name, l.name AS lodge_name
-         FROM guest_activities a JOIN safety_zones z ON z.id = a.zone_id JOIN tourists t ON t.id = a.tourist_id LEFT JOIN lodges l ON l.id = a.lodge_id
+    await db.query<ActivityRow & { zone_name: string; tourist_name: string | null; lodge_name: string | null; tour_operator_name: string | null }>(
+      `SELECT a.*, z.name AS zone_name, t.name AS tourist_name, l.name AS lodge_name, o.name AS tour_operator_name
+         FROM guest_activities a JOIN safety_zones z ON z.id = a.zone_id LEFT JOIN tourists t ON t.id = a.tourist_id LEFT JOIN lodges l ON l.id = a.lodge_id
+         LEFT JOIN tour_groups g ON g.id = a.tour_group_id LEFT JOIN tour_operators o ON o.id = g.tour_operator_id
         WHERE ($1::text IS NULL OR a.area_id = $1) AND a.returned_at IS NULL AND a.cancelled_at IS NULL
           AND a.starts_at <= now() AND a.ends_at > now() - interval '3 hours'
         ORDER BY a.ends_at`,

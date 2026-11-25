@@ -35,6 +35,7 @@ export function mount(main, ctx) {
   const staffId = el('input', { id: 'gate-staff-id', maxlength: '32', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false', placeholder: 'Staff ID' });
   const pin = el('input', { id: 'gate-pin', type: 'password', inputmode: 'numeric', maxlength: '12', autocomplete: 'off', placeholder: '4–12 digits' });
   const visual = el('input', { id: 'gate-visual', type: 'checkbox', disabled: true });
+  const tourists = el('input', { id: 'gate-tourists', type: 'number', min: '0', max: '60', value: '0', inputmode: 'numeric' });
   const verify = el('button', { type: 'submit', class: 'btn btn-primary btn-lg', disabled: true }, icon('shield'), 'Verify staff access');
   const visitor = el('button', { type: 'button', class: 'btn', disabled: true }, 'No valid staff ID — deny entry');
   const result = el('div', { class: 'gate-result', 'aria-live': 'assertive', tabindex: '-1' });
@@ -50,6 +51,7 @@ export function mount(main, ctx) {
   const form = el('form', { class: 'stack', autocomplete: 'off' },
     field('gate-zone', 'Restricted zone', zone),
     field('gate-staff-id', 'Staff ID', staffId), field('gate-pin', 'Staff PIN', pin),
+    field('gate-tourists', 'Tourists with this guide', tourists, 'A guide’s tour group for today is recorded as in the park here.'),
     el('label', { class: 'gate-confirm' }, visual, el('span', {}, 'I checked the person’s staff badge against the live camera view.')),
     el('div', { class: 'stack' }, verify, visitor), result);
   main.append(
@@ -152,7 +154,7 @@ export function mount(main, ctx) {
     resetDecision();
     refreshControls();
     clear(result, el('p', {}, 'Checking authorization. Keep entry closed…'));
-    const input = { zoneId: Number(zone.value), staffId: unidentified ? '' : staffId.value.trim(), pin: unidentified ? '' : pin.value, identityConfirmed: !unidentified && cameraLive() && visual.checked };
+    const input = { zoneId: Number(zone.value), staffId: unidentified ? '' : staffId.value.trim(), pin: unidentified ? '' : pin.value, identityConfirmed: !unidentified && cameraLive() && visual.checked, touristCount: unidentified ? 0 : Math.max(0, Math.min(60, Number(tourists.value) || 0)) };
     pin.value = '';
     try {
       const response = await api.post('/api/gate/check', input);
@@ -161,6 +163,7 @@ export function mount(main, ctx) {
       result.className = `gate-result ${allowed ? 'is-allowed' : 'is-denied'}`;
       clear(result, el('h3', {}, icon(allowed ? 'check-circle' : 'shield'), allowed ? 'Staff access verified' : 'Entry denied — gate review required'),
         el('p', {}, REASONS[response.attempt.reason]), el('p', {}, response.instruction),
+        response.attempt.tour_group ? el('p', { class: 'strong' }, icon('users', 'icon icon-sm'), ` Tour group ${response.attempt.tour_group.name} (${response.attempt.tour_group.operator}) is now in the park here · ${response.attempt.tour_group.declared} declared, ${response.attempt.tour_group.registered} registered.`) : null,
         el('p', { class: 'small' }, `Check #${response.attempt.id} · ${fmtDateTime(response.attempt.created_at)}${allowed ? ' · Complete this entry now; verify again for another arrival.' : ' · Added to the gate review queue.'}`));
       result.focus({ preventScroll: true });
       if (allowed) resultTimer = setTimeout(() => { resetDecision(); clear(result, el('p', {}, 'Previous check finished. Verify again for the next arrival.')); }, 20000);

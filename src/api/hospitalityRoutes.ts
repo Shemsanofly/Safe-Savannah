@@ -3,6 +3,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import QRCode from 'qrcode';
 import { z } from 'zod';
+import { toCsv } from './csv.js';
+import { tourismCsvRows, tourismReport } from '../store/tourism.js';
 import type { AppConfig } from '../config.js';
 import type { Db } from '../db/pool.js';
 import { eventRef } from '../domain/eventRef.js';
@@ -103,6 +105,24 @@ export async function registerHospitalityRoutes(
     };
   });
   // Light status for the header pill and connection check.
+  // Lodge and tourism report: a front desk sees its own lodge; admins every lodge (or one with ?lodge=).
+  const reportFor = async (req: FastifyRequest) => {
+    const { days, lodge } = z.object({ days: z.coerce.number().int().min(1).max(366).default(30), lodge: z.string().max(40).optional() }).parse(req.query);
+    const op = req.operator!;
+    if (op.role !== 'host' && op.role !== 'admin') throw new DomainError(403, 'forbidden', 'The tourism report is for lodge staff and admins.');
+    const lodgeId = op.role === 'host' ? (await lodgeFor(req)).id : lodge || null;
+    return tourismReport(db, { days, timeZone: cfg.TIMEZONE, lodgeId });
+  };
+  app.get('/api/lodge/report', { preHandler: requireStaff }, async (req) => reportFor(req));
+  app.get('/api/lodge/report.csv', { preHandler: requireStaff }, async (req, reply) => {
+    const r = await reportFor(req);
+    const { header, rows } = tourismCsvRows(r);
+    return reply
+      .type('text/csv; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="safe-savannah-tourism-${r.from_day}-to-${r.to_day}.csv"`)
+      .send(toCsv(header, rows));
+  });
+
   app.get('/api/lodge/pulse', { preHandler: requireStaff }, async (req) => {
     const lodge = await lodgeFor(req);
     const [v, escorts, activities] = await Promise.all([lodgeConsole(db, lodge.id), lodgeEscorts(db, lodge.id), lodgeActivities(db, lodge.id)]);

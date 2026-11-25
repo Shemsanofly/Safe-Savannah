@@ -32,6 +32,8 @@ export function mount(main, ctx) {
   const evidence = el('div', {});
   const actionPanel = el('div', { class: 'action-panel' });
   const timeline = el('ol', { class: 'timeline' });
+  let groupsPanel;
+  let lastGroupsKey = '';
 
   main.append(
     el('a', { href: lastListHash(), class: 'back-link' }, icon('chevron-left', 'icon icon-sm'), 'Incidents'),
@@ -47,7 +49,8 @@ export function mount(main, ctx) {
       el('div', { class: 'stack' },
         el('section', { class: 'panel', 'aria-labelledby': 'act-title' },
           el('div', { class: 'panel-head' }, el('h2', { id: 'act-title' }, icon('user'), 'Response')),
-          el('div', { class: 'panel-body' }, actionPanel)))),
+          el('div', { class: 'panel-body' }, actionPanel)),
+        groupsPanel = el('section', { class: 'panel', 'aria-labelledby': 'tgp-title', hidden: true }))),
 
   );
   clear(head, el('div', {}, el('h1', {}, `Incident`), el('p', { class: 'sub' }, 'Loading…')));
@@ -113,11 +116,32 @@ export function mount(main, ctx) {
       lastEvKey = evKey;
     }
     renderActions(e);
+    renderGroups(e);
     const tlKey = JSON.stringify(data.timeline.filter((t) => t.kind === 'action'));
     if (tlKey !== lastTlKey) {
       renderTimeline();
       lastTlKey = tlKey;
     }
+  }
+
+  // Tour groups in the park in this area: who is out there, and the guide's phone.
+  function renderGroups(e) {
+    const groups = data.tourGroups || [];
+    const key = JSON.stringify(groups);
+    if (key === lastGroupsKey) return;
+    lastGroupsKey = key;
+    groupsPanel.hidden = !groups.length;
+    if (!groups.length) return;
+    const ACT = { game_drive: 'Game drive', walking_safari: 'Walking safari', picnic: 'Picnic', sundowner: 'Sundowner', other: 'Activity' };
+    clear(groupsPanel,
+      el('div', { class: 'panel-head' }, el('h2', { id: 'tgp-title' }, icon('users'), 'Tour groups in this area'), el('span', { class: 'muted small' }, `${groups.length} in the park`)),
+      el('div', { class: 'panel-body' }, el('ul', { class: 'desk-guestlist' }, groups.map((g) => el('li', {},
+        el('span', { class: 'avatar', 'aria-hidden': 'true' }, String(g.people)),
+        el('div', { class: 'grow' },
+          el('strong', {}, `${g.operator_name} · ${ACT[g.kind] || g.kind}`, g.same_zone ? el('span', { class: 'desk-at small' }, ' Same place ') : null),
+          el('div', { class: 'small muted' }, `${g.entry_zone_name || 'In the area'} · ${g.people} ${g.people === 1 ? 'person' : 'people'} · out by ${fmtTime(g.ends_at, false)}${g.guide_name ? ` · guide ${g.guide_name}` : ''}`)),
+        g.guide_phone ? el('a', { class: 'btn btn-sm', href: `tel:${g.guide_phone}`, 'aria-label': `Call guide ${g.guide_name}` }, icon('phone', 'icon icon-sm'), el('span', {}, 'Guide')) : null))),
+        el('p', { class: 'hint' }, 'From tour operators’ gate entries. Call the guide to move the group away.')));
   }
 
   function renderEvidence(e) {

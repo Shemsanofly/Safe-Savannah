@@ -167,6 +167,86 @@ export async function seed(db: Db, timeZone: string): Promise<string[]> {
     );
   }
 
+  // A tour operator with an office account, a guide allowed through the Kopjes trail gate, and groups.
+  await db.query(`INSERT INTO tour_operators (id, name, phone, demo) VALUES ('kilima-safaris','Kilima Safaris','+255754000300',true) ON CONFLICT (id) DO NOTHING`);
+  const tourPin = await hashPin('4680');
+  await db.query(
+    `INSERT INTO operators (id, name, pin_hash, role, tour_operator_id, demo) VALUES ('tours1','Grace (Kilima Safaris office)',$1,'agency','kilima-safaris',true),
+       ('guide1','Elias Kimaro',$1,'guide','kilima-safaris',true) ON CONFLICT (id) DO NOTHING`,
+    [tourPin],
+  );
+  await db.query(`UPDATE operators SET phone = '+255754000301' WHERE id = 'guide1' AND phone IS NULL`);
+  const trail = (await db.query<{ id: string }>(`SELECT id FROM safety_zones WHERE area_id = 'serengeti-seronera' AND name = 'Kopjes walking trail' LIMIT 1`)).rows[0];
+  const anAdmin = (await db.query<{ id: string }>(`SELECT id FROM operators WHERE role = 'admin' AND active ORDER BY demo DESC, id LIMIT 1`)).rows[0];
+  if (trail && anAdmin) {
+    await db.query(
+      `INSERT INTO staff_gate_permissions (staff_id, zone_id, active, updated_by) VALUES ('guide1',$1,true,$2) ON CONFLICT (staff_id, zone_id) DO NOTHING`,
+      [trail.id, anAdmin.id],
+    );
+  }
+  // Today's walking safari (planned, so the guide's gate entry puts it in the park) and tomorrow's game drive.
+  const hasGroup = await db.query(
+    `SELECT 1 FROM tour_groups WHERE tour_operator_id = 'kilima-safaris' AND demo AND day = (now() AT TIME ZONE $1)::date`, [timeZone],
+  );
+  if (!hasGroup.rowCount && trail) {
+    const road = (await db.query<{ id: string }>(`SELECT id FROM safety_zones WHERE area_id = 'serengeti-seronera' AND name = 'Seronera main road' LIMIT 1`)).rows[0];
+    const groups: [string, string, string | null, string, number, string[]][] = [
+      ['Becker & Watanabe walking safari', 'walking_safari', trail.id, 'guide1', 0, ['+255765000209', '+255765000210']],
+      ['Okafor family game drive', 'game_drive', road?.id ?? null, 'guide1', 1, ['+255765000202']],
+    ];
+    for (const [name, kind, zoneId, guide, inDays, phones] of groups) {
+      const g = await db.query<{ id: string }>(
+        `INSERT INTO tour_groups (tour_operator_id, name, guide_id, area_id, zone_id, kind, day, ends_at, created_by, demo)
+         VALUES ('kilima-safaris',$1,$2,'serengeti-seronera',$3,$4,(now() AT TIME ZONE $5)::date + $6::int, now() + ($6::int * interval '1 day') + interval '3 hours','seed',true)
+         RETURNING id`,
+        [name, guide, zoneId, kind, timeZone, inDays],
+      );
+      await db.query(
+        `INSERT INTO tour_group_members (group_id, tourist_id) SELECT $1, id FROM tourists WHERE phone = ANY($2::text[]) ON CONFLICT DO NOTHING`,
+        [g.rows[0]!.id, phones],
+      );
+    }
+    log.push('tour operator Kilima Safaris: office tours1, guide guide1 (PIN 4680), two tour groups');
+  }
+
+  // A little hospitality history so the tourism report has something to show on a fresh demo.
+  if (!(await db.query(`SELECT 1 FROM app_flags WHERE key = 'demo_hospitality_seeded'`)).rowCount) {
+    let calls = 0;
+    for (const [li, l] of LODGES.entries()) {
+      const guests = (await db.query<{ id: string }>(`SELECT id FROM tourists WHERE lodge_id = $1 AND demo ORDER BY id`, [l.id])).rows;
+      if (!guests.length) continue;
+      for (const daysAgo of [3 + li, 9 + li]) {
+        const started = new Date(Date.now() - daysAgo * 86_400_000 - rnd(1, 6) * 3_600_000);
+        const answerMins = guests.map(() => rnd(0.5, 9));
+        const done = new Date(started.getTime() + Math.max(...answerMins) * 60_000);
+        const c = await db.query<{ id: string }>(
+          `INSERT INTO guest_checks (lodge_id, reason, started_by, started_at, completed_at, closed_at, closed_reason, demo)
+           VALUES ($1,$2,'system',$3,$4,$5,'all_clear',true) RETURNING id`,
+          [l.id, `${daysAgo % 2 ? 'Elephant' : 'Lion'} near ${l.name} (demo history)`, started, done, new Date(done.getTime() + rnd(10, 40) * 60_000)],
+        );
+        for (const [gi, g] of guests.entries()) {
+          const viaDesk = gi === guests.length - 1 && daysAgo % 2 === 0;
+          await db.query(
+            `INSERT INTO guest_check_responses (check_id, tourist_id, status, channel, responded_at, marked_by) VALUES ($1,$2,'safe',$3,$4,$5)`,
+            [c.rows[0]!.id, g.id, viaDesk ? 'host' : gi % 3 === 1 ? 'sms' : 'app', new Date(started.getTime() + answerMins[gi]! * 60_000), viaDesk ? l.host : null],
+          );
+        }
+        calls++;
+      }
+      for (let i = 0; i < 2 + li; i++) {
+        const g = guests[i % guests.length]!;
+        const at = new Date(Date.now() - rnd(1, 12) * 86_400_000);
+        await db.query(
+          `INSERT INTO escort_requests (tourist_id, lodge_id, from_place, to_key, people, status, escort_name, accepted_by, accepted_at, done_at, created_at)
+           VALUES ($1,$2,$3,$4,2,'done','Askari (demo)',$5,$6,$7,$8)`,
+          [g.id, l.id, `Tent ${3 + i}`, i % 2 ? 'room' : 'dining', l.host, new Date(at.getTime() + rnd(1, 6) * 60_000), new Date(at.getTime() + rnd(8, 15) * 60_000), at],
+        );
+      }
+    }
+    await db.query(`INSERT INTO app_flags (key, value) VALUES ('demo_hospitality_seeded', 'true')`);
+    log.push(`${calls} past roll calls and some night escorts at the demo lodges`);
+  }
+
   const seeded = await db.query(`SELECT 1 FROM app_flags WHERE key = 'demo_history_seeded'`);
   if (!seeded.rowCount) {
     const n = await seedHistory(db, timeZone);

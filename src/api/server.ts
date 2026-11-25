@@ -42,6 +42,8 @@ import { toCsv } from './csv.js';
 import { appPage, loginPage } from './pages.js';
 import { handleUssd } from './ussd.js';
 import { handleRollCallSms, hostMayUse } from './hospitalityRoutes.js';
+import { tourMayUse } from './tourRoutes.js';
+import { groupsInArea } from '../store/tours.js';
 import { issueAllClear } from '../store/hospitality.js';
 import { messagingOpts, registerPlatformRoutes, voiceCallbackUrl } from './platformRoutes.js';
 import { registerGateRoutes } from './gateRoutes.js';
@@ -281,10 +283,15 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean;
     if (issuedAt <= cutoff) return; // PIN reset, role change or deactivation since this session began
     req.operator = { id: op.id, name: op.name, role: op.role, active: op.active };
   });
-  // Front-desk (host) accounts see only their own lodge.
+  // Partner accounts see only their own screen: front desks their lodge, tour operators and guides their groups.
   app.addHook('preHandler', async (req, reply) => {
-    if (req.operator?.role === 'host' && req.url.startsWith('/api/') && !hostMayUse(req.url)) {
+    const role = req.operator?.role;
+    if (!role || !req.url.startsWith('/api/')) return;
+    if (role === 'host' && !hostMayUse(req.url)) {
       return reply.code(403).send({ error: 'forbidden', message: 'Front-desk accounts can only use the front desk screen.' });
+    }
+    if ((role === 'agency' || role === 'guide') && !tourMayUse(req.url)) {
+      return reply.code(403).send({ error: 'forbidden', message: 'Tour operator and guide accounts can only use the tour groups screen.' });
     }
   });
 
@@ -502,6 +509,10 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean;
       actions: detail.actions,
       notifications: detail.notifications,
       timeline: detail.timeline,
+      // Tour groups in the park in this area now, so rangers can call the guide.
+      tourGroups: event.kind === 'wildlife' && event.area_id
+        ? (await groupsInArea(db, event.area_id)).map((g) => ({ ...g, same_zone: g.entry_zone_id != null && g.entry_zone_id === Number(event.safety_zone_id) }))
+        : [],
     };
   });
 
@@ -629,7 +640,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean;
   });
 
   await registerPlatformRoutes(app, cfg, db, { requireStaff: requireOperator, requireAdmin });
-  await registerGateRoutes(app, db, { requireStaff: requireOperator, requireAdmin });
+  await registerGateRoutes(app, db, { requireStaff: requireOperator, requireAdmin }, cfg.TIMEZONE);
   await registerFaceGateRoutes(app, cfg, db, { requireStaff: requireOperator, requireAdmin }, { faces: opts.faces, transport: opts.transport });
   await registerWebhooks(app, cfg, db);
   return app;

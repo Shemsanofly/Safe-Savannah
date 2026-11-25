@@ -174,7 +174,7 @@ setInterval(updateFreshness, 1000);
 async function route() {
   clearInterval(timer);
   const r = currentRoute();
-  const needsAuth = ['home', 'alerts', 'sos', 'trip', 'escort', 'out'].includes(r);
+  const needsAuth = ['home', 'alerts', 'sos', 'trip', 'escort', 'out', 'tour'].includes(r);
   // Always fetch fresh data when entering a signed-in screen (status may have changed meanwhile).
   if (needsAuth) await loadMe();
   if (needsAuth && !me) return go('welcome');
@@ -186,7 +186,7 @@ async function route() {
   const isAuth = !me && ['welcome', 'login', 'register', 'checkin'].includes(r);
   document.body.classList.toggle('t-auth-page', isAuth);
   nav.hidden = isAuth;
-  const views = { welcome, login, register, home, alerts, sos, guide, trip, checkin, escort, out };
+  const views = { welcome, login, register, home, alerts, sos, guide, trip, checkin, escort, out, tour };
   (views[r] || (me ? home : welcome))();
   main.querySelector('h1')?.focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
@@ -453,7 +453,7 @@ function home() {
     planCards(),
     el('div', { class: 't-home' },
       el('div', { class: 't-col' }, tripCard(), safetyStatus(active, feed.activeWildlifeIncidents, recentClear())),
-      el('div', { class: 't-col' }, openSos ? null : sosCallout(), quickActions())));
+      el('div', { class: 't-col' }, openSos ? null : sosCallout(), quickActions(), todayCard())));
   // Refresh often enough that a lodge roll call or warning shows up within seconds.
   pollMe(openSos || check ? 5000 : 8000, home);
 }
@@ -772,7 +772,73 @@ function planCards() {
         el('small', {}, T('out_until', fmtClock(a.ends_at)))),
       icon('chevron-right', 'icon icon-sm')));
   }
+  const g = me.feed.tourGroup;
+  if (g) {
+    const tone = g.state === 'overdue' ? 'is-late' : g.state === 'in_park' ? 'is-go' : g.state === 'back' ? 'is-done' : 'is-wait';
+    cards.push(el('a', { class: `t-plan ${tone}`, href: '#/tour' }, el('span', { class: 't-plan-icon' }, icon('users')),
+      el('span', { class: 't-plan-text' }, el('strong', {}, T('tour_with', g.operator_name)), el('small', {}, tourStatus(g))),
+      icon('chevron-right', 'icon icon-sm')));
+  }
   return cards.length ? el('div', { class: 't-plans' }, cards) : null;
+}
+
+/** One line on where the traveller's tour group is. */
+function tourStatus(g) {
+  if (g.state === 'in_park') return `${T('tour_in_park', g.place)} · ${T('tour_out_by', fmtClock(g.ends_at))}`;
+  if (g.state === 'overdue') return `${T('tour_overdue')} · ${g.place}`;
+  if (g.state === 'back') return T('tour_back');
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: BOOT.timeZone || undefined });
+  const day = g.day === today ? T('tour_today') : new Date(`${g.day}T12:00:00Z`).toLocaleDateString(LOCALE[lang] || 'en-GB', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return `${T('tour_planned', day)} · ${T(`act_${g.kind}`)}`;
+}
+
+/** A tour operator's group the traveller is in: guide, status, what the operator can see, and leaving. */
+function tour() {
+  const g = me.feed.tourGroup;
+  const head = pageHead(T('tour_title'), g ? g.name : '');
+  if (!g) {
+    page(T('tour_title'), head, emptyCard('users', T('tour_title'), T('tour_none')));
+    return;
+  }
+  const leave = el('button', { type: 'button', class: 'btn btn-block' }, el('span', {}, T('tour_leave')));
+  leave.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: T('tour_leave'), body: T('tour_leave_confirm', g.operator_name), confirmLabel: T('tour_leave') }))) return;
+    await busy(leave, async () => {
+      await tApi.post(`/api/tourist/tour-groups/${g.id}/leave`, {});
+      toast(T('tour_left'));
+      await loadMe();
+      go('home');
+    });
+  });
+  const tone = g.state === 'overdue' ? 'is-late' : g.state === 'in_park' ? 'is-go' : g.state === 'back' ? 'is-done' : 'is-wait';
+  page(T('tour_title'), head,
+    el('section', { class: `t-panel t-tour ${tone}` },
+      el('p', { class: 't-kicker' }, T('tour_with', g.operator_name)),
+      el('h2', {}, tourStatus(g)),
+      g.guide_name
+        ? el('div', { class: 't-tour-guide' }, el('span', { class: 't-plan-icon' }, icon('person')),
+            el('div', { class: 'grow' }, el('small', {}, T('tour_guide')), el('strong', {}, g.guide_name)),
+            g.guide_phone ? el('a', { class: 'btn', href: `tel:${g.guide_phone}` }, icon('phone'), el('span', {}, T('tour_call_guide'))) : null)
+        : null),
+    el('section', { class: 't-panel t-note' }, icon('shield', 'icon'), el('p', {}, T('tour_privacy', g.operator_name))),
+    g.state === 'back' ? null : leave);
+  pollMe(10000, tour);
+}
+
+/** "Today in the park": species seen today in the area, a while after, with no places. */
+function todayCard() {
+  const d = me.feed.today;
+  if (!d) return null;
+  const area = me.feed.area?.name || '';
+  return el('section', { class: 't-panel t-today', 'aria-labelledby': 't-today-title' },
+    el('div', { class: 't-today-head' }, el('span', { class: 't-today-icon' }, icon('paw')),
+      el('div', {}, el('h2', { id: 't-today-title' }, T('today_title')), el('p', { class: 't-muted' }, T('today_sub', area)))),
+    d.species.length
+      ? el('ul', { class: 't-today-list' }, d.species.map((sp) => el('li', {},
+          el('strong', {}, sp.names?.[lang] || sp.names?.en || sp.key),
+          el('span', {}, `${T('today_seen', sp.count)} · ${T(`today_${sp.when}`)}`))))
+      : el('p', { class: 't-muted' }, T('today_empty')),
+    el('p', { class: 't-today-foot' }, icon('shield', 'icon icon-sm'), el('span', {}, T('today_protected'), d.simulated ? ` ${T('today_sim')}` : '')));
 }
 const escortDest = (e) => (e.to_key === 'other' ? e.to_text : T(`to_${e.to_key}`));
 

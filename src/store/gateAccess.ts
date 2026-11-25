@@ -1,6 +1,7 @@
 import { withTx, type Db, type Queryable } from '../db/pool.js';
 import { DomainError } from './events.js';
 import { authenticate } from './operators.js';
+import { recordGuideEntry } from './tours.js';
 
 export interface GateAttempt {
   id: number;
@@ -13,6 +14,7 @@ export interface GateAttempt {
   identity_confirmed: boolean;
   created_at: Date;
   reviewed_at: Date | null;
+  tour_group?: Awaited<ReturnType<typeof recordGuideEntry>>;
 }
 
 async function activeZone(db: Queryable, zoneId: number, requireActive = true): Promise<void> {
@@ -45,8 +47,8 @@ export async function setGatePermission(db: Db, actorId: string, input: {
 
 /** A guard's visual check plus credentials and a current explicit grant. No facial recognition or barrier command. */
 export async function checkGateAccess(db: Db, actorId: string, input: {
-  staffId: string; pin: string; zoneId: number; identityConfirmed: boolean;
-}): Promise<GateAttempt> {
+  staffId: string; pin: string; zoneId: number; identityConfirmed: boolean; touristCount?: number;
+}, opts: { timeZone?: string } = {}): Promise<GateAttempt> {
   return withTx(db, async (c) => {
     // Persistent limits survive restarts; locks prevent concurrent requests bypassing them.
     await c.query("SELECT pg_advisory_xact_lock(hashtextextended('gate-guard:' || $1, 0))", [actorId]);
@@ -77,11 +79,16 @@ export async function checkGateAccess(db: Db, actorId: string, input: {
       : !input.identityConfirmed ? 'identity_unconfirmed' : 'authorized';
     const decision = reason === 'authorized' ? 'allowed' : 'denied';
     const r = await c.query<GateAttempt>(
-      `INSERT INTO gate_access_attempts (zone_id, claimed_staff_id, staff_id, checked_by, decision, reason, identity_confirmed)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [input.zoneId, input.staffId, staff?.id ?? null, actorId, decision, reason, input.identityConfirmed],
+      `INSERT INTO gate_access_attempts (zone_id, claimed_staff_id, staff_id, checked_by, decision, reason, identity_confirmed, tourist_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [input.zoneId, input.staffId, staff?.id ?? null, actorId, decision, reason, input.identityConfirmed, input.touristCount ?? 0],
     );
-    return r.rows[0]!;
+    const attempt = r.rows[0]!;
+    // A guide admitted with a tour group: record the group as in the park here (never blocks the entry).
+    if (attempt.decision === 'allowed' && staff) {
+      attempt.tour_group = await recordGuideEntry(c, { staffId: staff.id, zoneId: input.zoneId, attemptId: Number(attempt.id), declared: input.touristCount ?? 0, method: 'credentials', timeZone: opts.timeZone ?? 'Africa/Dar_es_Salaam' });
+    }
+    return attempt;
   });
 }
 

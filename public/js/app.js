@@ -6,6 +6,8 @@ import { staffIntro } from './onboarding.js';
 
 const VIEWS = {
   lodge: () => import('./views/lodge.js'),
+  tours: () => import('./views/tours.js'),
+  tourism: () => import('./views/tourism.js'),
   lodges: () => import('./views/lodges.js'),
   ops: () => import('./views/ops.js'),
   access: () => import('./views/staffVerification.js'),
@@ -25,7 +27,10 @@ const VIEWS = {
 };
 
 const IS_HOST = BOOT.operator.role === 'host';
-const HOST_VIEWS = ['lodge', 'help'];
+const IS_TOURS = BOOT.operator.role === 'agency' || BOOT.operator.role === 'guide';
+// Partner accounts only have their own screen (and the guide); front desks also have their lodge report.
+const PARTNER_VIEWS = IS_HOST ? ['lodge', 'tourism', 'help'] : IS_TOURS ? ['tours', 'help'] : null;
+const HOME = IS_HOST ? 'lodge' : IS_TOURS ? 'tours' : 'ops';
 const main = document.getElementById('main');
 let current = null; // { name, instance }
 let routeSeq = 0;
@@ -35,11 +40,9 @@ export function parseHash() {
   const [pathPart, query = ''] = raw.split('?');
   const parts = pathPart.split('/').filter(Boolean);
   const params = Object.fromEntries(new URLSearchParams(query));
-  if (parts[0] === 'incidents' && parts[1] && !IS_HOST) return { name: 'incident', nav: 'incidents', id: Number(parts[1]), params };
-  const fallback = IS_HOST ? 'lodge' : 'ops';
-  let name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : fallback;
-  // Front-desk accounts only have the front desk and the guide.
-  if (IS_HOST && !HOST_VIEWS.includes(name)) name = 'lodge';
+  if (parts[0] === 'incidents' && parts[1] && !PARTNER_VIEWS) return { name: 'incident', nav: 'incidents', id: Number(parts[1]), params };
+  let name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : HOME;
+  if (PARTNER_VIEWS && !PARTNER_VIEWS.includes(name)) name = HOME;
   return { name, nav: name === 'access-manual' ? 'staff' : name, params };
 }
 
@@ -121,7 +124,27 @@ function renderHostShell(s) {
   clear(strip, pills);
 }
 
+function renderTourShell(s) {
+  const o = s.overview;
+  if (!o) return;
+  const pills = [];
+  if (o.sosOpen) pills.push(pill('#/tours', 'urgent', 'siren', `${o.sosOpen} guest SOS`, { dot: true, pulse: true }));
+  if (o.overdue) pills.push(pill('#/tours', 'urgent', 'clock', `${o.overdue} group${o.overdue === 1 ? '' : 's'} overdue`, { dot: true, pulse: true }));
+  if (o.alerts) pills.push(pill('#/tours', 'urgent', 'incident', `Wildlife alert near your group${o.inPark === 1 ? '' : 's'}`, { dot: true, pulse: true }));
+  if (o.inPark) pills.push(pill('#/tours', 'ok', 'map', `${o.inPark} group${o.inPark === 1 ? '' : 's'} in the park`));
+  if (o.planned) pills.push(pill('#/tours', 'unknown', 'calendar', `${o.planned} planned today`));
+  if (!pills.length) pills.push(pill('#/tours', 'ok', 'check-circle', 'No groups out today'));
+  if (s.error) pills.unshift(el('span', { class: 'pill pill-outdated' }, icon('wifi-off'), `Status as of ${fmtTime(new Date(s.lastOkAt).toISOString())}`));
+  strip.classList.toggle('is-stale', !!s.error);
+  clear(strip, pills);
+}
+
 function renderShell(s) {
+  if (IS_TOURS) {
+    renderTourShell(s);
+    tickUpdated();
+    return;
+  }
   if (IS_HOST) {
     renderHostShell(s);
     tickUpdated();
@@ -248,8 +271,8 @@ if (duty) {
     }
   });
 }
-if (!location.hash) history.replaceState(null, '', IS_HOST ? '#/lodge' : '#/ops');
-store.start(IS_HOST ? '/api/lodge/pulse' : '/api/overview');
+if (!location.hash) history.replaceState(null, '', `#/${HOME}`);
+store.start(IS_HOST ? '/api/lodge/pulse' : IS_TOURS ? '/api/tours/pulse' : '/api/overview');
 route();
 // Fetch every screen once up front so navigation still works if the server drops out briefly.
 setTimeout(() => Object.values(VIEWS).forEach((load) => load().catch(() => undefined)), 1500);

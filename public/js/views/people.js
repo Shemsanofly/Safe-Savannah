@@ -17,6 +17,7 @@ export function mount(main, ctx) {
     renderTabs();
     if (!areas.length) areas = (await api.get('/api/areas').catch(() => ({ areas: [] }))).areas;
     if (!lodges.length) lodges = (await api.get('/api/lodges').catch(() => ({ lodges: [] }))).lodges.filter((l) => l.active);
+    if (!tourOps.length) tourOps = (await api.get('/api/tours/operators').catch(() => ({ operators: [] }))).operators.filter((o) => o.active);
     clear(body, el('div', { class: 'view-loading' }, el('span', { class: 'spinner', 'aria-hidden': 'true' }), 'Loading…'));
     try {
       if (tab === 'staff') renderStaff((await api.get('/api/operators')).operators);
@@ -26,9 +27,12 @@ export function mount(main, ctx) {
     }
   }
   let lodges = [];
+  let tourOps = [];
+  const TOURING = ['agency', 'guide'];
+  const tourOpName = (id) => tourOps.find((o) => o.id === id)?.name || 'No tour operator';
   const areaName = (id) => areas.find((a) => a.id === id)?.name || 'All areas';
   const lodgeName = (id) => lodges.find((l) => l.id === id)?.name || 'No lodge';
-  const ROLE_LABEL = { ranger: 'Ranger', admin: 'Admin', host: 'Front desk' };
+  const ROLE_LABEL = { ranger: 'Ranger', admin: 'Admin', host: 'Front desk', agency: 'Tour operator', guide: 'Guide' };
   const roleSelect = (id, value, disabled) => {
     const s = el('select', { id, disabled }, Object.entries(ROLE_LABEL).map(([v, l]) => el('option', { value: v }, l)));
     s.value = value;
@@ -36,6 +40,11 @@ export function mount(main, ctx) {
   };
   const lodgeSelect = (id, value) => {
     const s = el('select', { id }, el('option', { value: '' }, 'Choose a lodge…'), lodges.map((l) => el('option', { value: l.id }, l.name)));
+    s.value = value || '';
+    return s;
+  };
+  const tourSelect = (id, value) => {
+    const s = el('select', { id }, el('option', { value: '' }, 'Choose a tour operator…'), tourOps.map((o) => el('option', { value: o.id }, o.name)));
     s.value = value || '';
     return s;
   };
@@ -77,10 +86,12 @@ export function mount(main, ctx) {
         el('div', { class: 'person-name' }, el('strong', {}, o.name), self ? el('span', { class: 'muted small' }, '(you)') : null, o.demo ? el('span', { class: 'inc-tag small' }, 'Demo') : null),
         o.role === 'host'
           ? el('div', { class: 'person-sub' }, el('span', {}, 'Front desk'), el('span', {}, lodgeName(o.lodge_id)))
+          : TOURING.includes(o.role)
+          ? el('div', { class: 'person-sub' }, el('span', {}, ROLE_LABEL[o.role]), el('span', {}, tourOpName(o.tour_operator_id)), o.phone ? el('a', { href: `tel:${o.phone}` }, o.phone) : null)
           : el('div', { class: 'person-sub' }, el('span', {}, ROLE_LABEL[o.role] || o.role), el('span', {}, areaName(o.area_id)),
             o.phone ? el('a', { href: `tel:${o.phone}` }, o.phone) : el('span', { class: 'warn-text' }, 'No phone'))),
-      el('span', { class: `person-pill tone-${duty[1]}` }, o.role === 'host' && o.active ? 'Front desk' : duty[0]),
-      el('div', { class: 'person-actions' }, o.role === 'host' ? null : el('a', { class: 'btn btn-sm', href: `#/staff?staff=${encodeURIComponent(o.id)}` }, 'Reference photo'), edit, menu),
+      el('span', { class: `person-pill tone-${duty[1]}` }, (o.role === 'host' || TOURING.includes(o.role)) && o.active ? ROLE_LABEL[o.role] : duty[0]),
+      el('div', { class: 'person-actions' }, o.role === 'host' || o.role === 'agency' ? null : el('a', { class: 'btn btn-sm', href: `#/staff?staff=${encodeURIComponent(o.id)}` }, 'Reference photo'), edit, menu),
       status);
   }
 
@@ -89,21 +100,28 @@ export function mount(main, ctx) {
     const role = roleSelect('es-role', o.role, self);
     const lodge = lodgeSelect('es-lodge', o.lodge_id);
     const lodgeField = f('es-lodge', 'Lodge', lodge, 'Front-desk accounts see only this lodge.');
+    const tour = tourSelect('es-tour', o.tour_operator_id);
+    const tourField = f('es-tour', 'Tour operator', tour, 'Tour operator and guide accounts see only this company’s groups.');
     const phone = el('input', { id: 'es-phone', type: 'tel', inputmode: 'tel', value: o.phone || '', placeholder: '+255…' });
     const area = areaSelect('es-area', o.area_id, 'Area');
     const duty = el('input', { type: 'checkbox', id: 'es-duty', checked: o.on_duty });
+    const phoneField = f('es-phone', 'Phone', phone, 'Rangers: alerts are sent here while on duty. Guides: rangers call this number.');
     const rangerFields = el('div', { class: 'stack' },
-      f('es-phone', 'Phone for alerts', phone, 'Alerts are sent here while on duty.'),
       f('es-area', 'Area', area, 'Alerts for this area only, or all areas.'),
       el('label', { class: 't-switch' }, duty, el('span', { class: 't-switch-track', 'aria-hidden': 'true' }), el('span', {}, 'On duty')));
-    const sync = () => { lodgeField.hidden = role.value !== 'host'; rangerFields.hidden = role.value === 'host'; };
+    const sync = () => {
+      lodgeField.hidden = role.value !== 'host';
+      tourField.hidden = !TOURING.includes(role.value);
+      phoneField.hidden = role.value === 'host' || role.value === 'agency';
+      rangerFields.hidden = role.value !== 'ranger' && role.value !== 'admin';
+    };
     role.addEventListener('change', sync);
     sync();
     const ok = await confirmDialog({
       title: `Edit ${o.name}`,
       body: el('div', { class: 'stack' },
         f('es-role', 'Role', role, self ? 'You cannot change your own role.' : 'Changing the role signs them out.'),
-        lodgeField,
+        lodgeField, tourField, phoneField,
         rangerFields),
       confirmLabel: 'Save changes',
     });
@@ -112,9 +130,15 @@ export function mount(main, ctx) {
       toast('Choose the lodge for a front-desk account. Nothing changed.', 'error');
       return;
     }
+    if (TOURING.includes(role.value) && !tour.value) {
+      toast('Choose the tour operator for this account. Nothing changed.', 'error');
+      return;
+    }
     const done = await runAction(null, status, async () => {
       await api.patch(`/api/rangers/${encodeURIComponent(o.id)}/contact`, role.value === 'host'
         ? { lodge_id: lodge.value, on_duty: false }
+        : TOURING.includes(role.value)
+        ? { tour_operator_id: tour.value, on_duty: false, ...(role.value === 'guide' ? { phone: phone.value.trim() || null } : {}) }
         : { phone: phone.value.trim() || null, area_id: area.value || null, on_duty: duty.checked });
       if (!self && role.value !== o.role) await api.patch(`/api/operators/${encodeURIComponent(o.id)}`, { role: role.value });
     }, { success: `${o.name} updated.` });
@@ -140,15 +164,17 @@ export function mount(main, ctx) {
     const role = roleSelect('ns-role', 'ranger', false);
     const lodge = lodgeSelect('ns-lodge', '');
     const lodgeField = f('ns-lodge', 'Lodge', lodge, 'Front desk only');
+    const tour = tourSelect('ns-tour', '');
+    const tourField = f('ns-tour', 'Tour operator', tour, 'Tour operator and guide accounts');
     const err = el('p', { class: 'field-error', hidden: true, role: 'alert' });
     const btn = el('button', { type: 'submit', class: 'btn btn-primary' }, icon('plus'), el('span', {}, 'Add person'));
     const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
     const form = el('form', { class: 'add-form', novalidate: true },
       el('div', { class: 'form-grid' },
         f('ns-name', 'Full name', name), f('ns-id', 'Sign-in ID', id, 'Letters, digits, - or _'), f('ns-pin', 'Starting PIN', pin, '4–12 digits'),
-        f('ns-role', 'Role', role), lodgeField, f('ns-phone', 'Phone for alerts', phone, 'Optional'), f('ns-area', 'Area', area)),
+        f('ns-role', 'Role', role), lodgeField, tourField, f('ns-phone', 'Phone', phone, 'Optional'), f('ns-area', 'Area', area)),
       err, el('div', { class: 'form-actions' }, btn, status));
-    const syncRole = () => { lodgeField.hidden = role.value !== 'host'; };
+    const syncRole = () => { lodgeField.hidden = role.value !== 'host'; tourField.hidden = !TOURING.includes(role.value); };
     role.addEventListener('change', syncRole);
     syncRole();
     form.addEventListener('submit', async (e) => {
@@ -156,10 +182,11 @@ export function mount(main, ctx) {
       if (!validateRequired(name, err, 'Enter a name.') || !validateRequired(id, err, 'Choose a sign-in ID.') || !validateRequired(pin, err, 'Set a starting PIN.')) return;
       if (!/^\d{4,12}$/.test(pin.value.trim())) { err.hidden = false; clear(err, icon('alert', 'icon icon-sm'), 'PIN must be 4–12 digits.'); return; }
       if (role.value === 'host' && !lodge.value) { err.hidden = false; clear(err, icon('alert', 'icon icon-sm'), 'Choose the lodge for this front-desk account.'); lodge.focus(); return; }
-      if (await runAction(btn, status, () => api.post('/api/rangers', { id: id.value.trim(), name: name.value.trim(), pin: pin.value.trim(), role: role.value, phone: phone.value.trim() || null, area_id: area.value || null, lodge_id: role.value === 'host' ? lodge.value : null }), { success: `${name.value.trim()} added.` })) load();
+      if (TOURING.includes(role.value) && !tour.value) { err.hidden = false; clear(err, icon('alert', 'icon icon-sm'), 'Choose the tour operator for this account.'); tour.focus(); return; }
+      if (await runAction(btn, status, () => api.post('/api/rangers', { id: id.value.trim(), name: name.value.trim(), pin: pin.value.trim(), role: role.value, phone: phone.value.trim() || null, area_id: area.value || null, lodge_id: role.value === 'host' ? lodge.value : null, tour_operator_id: TOURING.includes(role.value) ? tour.value : null }), { success: `${name.value.trim()} added.` })) load();
     });
     return el('details', { class: 'panel add-panel' },
-      el('summary', { class: 'panel-head' }, el('h2', {}, icon('plus'), 'Add a ranger, admin or front desk'), icon('chevron-down', 'icon icon-sm t-caret')),
+      el('summary', { class: 'panel-head' }, el('h2', {}, icon('plus'), 'Add a ranger, admin, front desk, tour operator or guide'), icon('chevron-down', 'icon icon-sm t-caret')),
       el('div', { class: 'panel-body' }, form));
   }
 

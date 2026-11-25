@@ -5,7 +5,7 @@ import { checkGateAccess, gateOverview, reviewGateAttempt, setGatePermission } f
 
 type Guard = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
-export async function registerGateRoutes(app: FastifyInstance, db: Db, guards: { requireStaff: Guard; requireAdmin: Guard }) {
+export async function registerGateRoutes(app: FastifyInstance, db: Db, guards: { requireStaff: Guard; requireAdmin: Guard }, timeZone = 'Africa/Dar_es_Salaam') {
   const staffId = z.string().trim().max(32);
   const zoneId = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
   app.get('/api/gate', { preHandler: guards.requireStaff }, async (req, reply) => {
@@ -19,8 +19,8 @@ export async function registerGateRoutes(app: FastifyInstance, db: Db, guards: {
     return { ok: true };
   });
   app.post('/api/gate/check', { preHandler: guards.requireStaff }, async (req) => {
-    const input = z.object({ staffId, pin: z.string().max(12), zoneId, identityConfirmed: z.boolean() }).strict().parse(req.body);
-    const attempt = await checkGateAccess(db, req.operator!.id, input);
+    const input = z.object({ staffId, pin: z.string().max(12), zoneId, identityConfirmed: z.boolean(), touristCount: z.number().int().min(0).max(60).optional() }).strict().parse(req.body);
+    const attempt = await checkGateAccess(db, req.operator!.id, input, { timeZone });
     return { attempt, instruction: attempt.decision === 'allowed'
       ? 'Staff credentials and zone permission verified. The gate attendant may admit this person after the visual ID check.'
       : 'Do not admit. Ask the person to wait outside the restricted area and contact gate staff for review.' };

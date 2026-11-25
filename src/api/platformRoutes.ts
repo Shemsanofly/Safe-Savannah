@@ -21,6 +21,7 @@ import {
 import { analyseImage, annotateUpload, getImageDetector, modelStatus, normaliseUpload } from '../vision/imageAnalysis.js';
 import { touristPage } from './pages.js';
 import { registerHospitalityRoutes } from './hospitalityRoutes.js';
+import { registerTourRoutes } from './tourRoutes.js';
 import { checkInTourist, getLodgeByCode, issueAllClear } from '../store/hospitality.js';
 
 const TOURIST_COOKIE = 'ss_tourist';
@@ -122,7 +123,7 @@ export async function registerPlatformRoutes(
     if (!req.tourist) return { tourist: null, emergencyLine: cfg.EMERGENCY_LINE };
     return {
     tourist: req.tourist,
-    feed: await touristFeed(db, req.tourist!),
+    feed: await touristFeed(db, req.tourist!, cfg.TIMEZONE, cfg.SIGHTINGS_DELAY_MINUTES ?? (cfg.SIMULATOR_ENABLED ? 20 : 120)),
     emergencyLine: cfg.EMERGENCY_LINE,
     serverTime: new Date().toISOString(),
     };
@@ -330,28 +331,30 @@ export async function registerPlatformRoutes(
   app.post('/api/rangers', { preHandler: requireAdmin }, async (req, reply) => {
     const body = z
       .object({
-        id: z.string().trim(), name: z.string(), pin: z.string().trim(), role: z.enum(['ranger', 'admin', 'host']).default('ranger'),
+        id: z.string().trim(), name: z.string(), pin: z.string().trim(), role: z.enum(['ranger', 'admin', 'host', 'agency', 'guide']).default('ranger'),
         phone: z.string().trim().max(20).optional().nullable(), area_id: z.string().optional().nullable(), on_duty: z.boolean().default(true),
-        lodge_id: z.string().max(40).optional().nullable(),
+        lodge_id: z.string().max(40).optional().nullable(), tour_operator_id: z.string().max(40).optional().nullable(),
       })
       .parse(req.body);
     const phone = body.phone ? normalizePhone(body.phone) : null;
     if (body.phone && !phone) throw new DomainError(400, 'invalid_phone', 'Enter a phone number like +255 712 345 678');
     if (body.lodge_id && !(await db.query('SELECT 1 FROM lodges WHERE id = $1', [body.lodge_id])).rowCount) throw new DomainError(400, 'unknown_lodge', 'Unknown lodge');
     const op = await createOperator(db, body);
-    await setOperatorContact(db, op.id, { phone, area_id: body.area_id || null, on_duty: body.role === 'host' ? false : body.on_duty });
-    return reply.code(201).send({ operator: { ...op, phone, area_id: body.area_id || null, on_duty: body.role !== 'host' && body.on_duty } });
+    const fieldStaff = body.role === 'ranger' || body.role === 'admin';
+    await setOperatorContact(db, op.id, { phone, area_id: body.area_id || null, on_duty: fieldStaff ? body.on_duty : false });
+    return reply.code(201).send({ operator: { ...op, phone, area_id: body.area_id || null, on_duty: fieldStaff && body.on_duty } });
   });
   app.patch('/api/rangers/:opId/contact', { preHandler: requireAdmin }, async (req) => {
     const { opId } = z.object({ opId: z.string().max(32) }).parse(req.params);
-    const body = z.object({ phone: z.string().trim().max(20).nullable().optional(), area_id: z.string().nullable().optional(), on_duty: z.boolean().optional(), lodge_id: z.string().max(40).optional() }).parse(req.body);
+    const body = z.object({ phone: z.string().trim().max(20).nullable().optional(), area_id: z.string().nullable().optional(), on_duty: z.boolean().optional(), lodge_id: z.string().max(40).optional(), tour_operator_id: z.string().max(40).optional() }).parse(req.body);
     const phone = body.phone === undefined ? undefined : body.phone ? normalizePhone(body.phone) : null;
     if (body.phone && !phone) throw new DomainError(400, 'invalid_phone', 'Enter a phone number like +255 712 345 678');
-    await setOperatorContact(db, opId, { phone, area_id: body.area_id === '' ? null : body.area_id, on_duty: body.on_duty, lodge_id: body.lodge_id || undefined });
+    await setOperatorContact(db, opId, { phone, area_id: body.area_id === '' ? null : body.area_id, on_duty: body.on_duty, lodge_id: body.lodge_id || undefined, tour_operator_id: body.tour_operator_id || undefined });
     return { operator: await getOperator(db, opId) };
   });
 
   await registerHospitalityRoutes(app, cfg, db, { requireStaff, requireAdmin, requireTourist }, msgOpts);
+  await registerTourRoutes(app, cfg, db, { requireStaff, requireAdmin, requireTourist });
 
   app.get('/api/stats', { preHandler: requireStaff }, async (req) => {
     const { days } = z.object({ days: z.coerce.number().int().min(1).max(366).default(14) }).parse(req.query);

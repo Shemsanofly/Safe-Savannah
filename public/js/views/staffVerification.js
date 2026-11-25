@@ -1,6 +1,9 @@
 import { api, clear, el, icon } from '../lib.js';
 
 // This page authenticates an arrival. It never loads enrollment, gallery or demo controls.
+/** A guide's tour group linked to this entry (see Tour groups). */
+const tourLine = (g) => g ? ` Tour group: ${g.name} (${g.operator}) is now in the park here · ${g.declared} declared, ${g.registered} registered in the app.` : '';
+
 export function mount(main) {
   let destroyed = false;
   let stream = null;
@@ -79,7 +82,7 @@ export function mount(main) {
       if (r.state === 'complete') {
         const command = r.gate?.lastCommand;
         if (command?.status === 'failed' || command?.status === 'unknown') show('Face authenticated — gate needs review', 'Your identity matched, but the opening could not be confirmed. Ask the gate attendant.', 'is-warning');
-        else show(`Authenticated${r.guide?.name ? ` — ${r.guide.name}` : ''}`, r.instruction || 'Your face and gate permission were verified.', 'is-authenticated');
+        else show(`Authenticated${r.guide?.name ? ` — ${r.guide.name}` : ''}`, `${r.instruction || 'Your face and gate permission were verified.'}${tourLine(r.tourGroup)}`, 'is-authenticated');
         session = null; heldFrame = null; resumeAt = Date.now() + 10000;
       } else if (r.state === 'denied') {
         show(r.faceMatched ? 'Face matched — gate access not granted' : 'Face not authenticated', r.instruction, r.faceMatched ? 'is-warning' : 'is-denied');

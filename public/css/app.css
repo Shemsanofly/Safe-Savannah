@@ -1535,3 +1535,63 @@ details.panel > summary::-webkit-details-marker { display: none; }
 .t-pick-chip span { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--line-strong); background: var(--paper); font-weight: 650; font-size: .92rem; }
 .t-pick-chip input:checked + span { background: var(--forest-800); border-color: var(--forest-800); color: #fff; }
 .t-pick-chip input:focus-visible + span { box-shadow: var(--focus); }
+
+/* ---------------------------------------------------------------- tour groups (tour operators, guides) */
+.tour-card { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: inset 4px 0 0 var(--tc, var(--line-strong)); }
+.tour-card.is-in_park { --tc: var(--amber-500); }
+.tour-card.is-overdue { --tc: var(--red-700); border-color: #efb9b1; background: var(--red-50); }
+.tour-card.is-back { --tc: var(--forest-500); }
+.tour-card.is-cancelled { opacity: .7; }
+.tour-card-head { display: flex; gap: 12px; align-items: flex-start; }
+.tour-card-head h3 { font-size: 1.02rem; margin: 0 0 2px; }
+.tour-card-head .grow { min-width: 0; }
+.tour-entry { display: flex; gap: 8px; align-items: flex-start; margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--ivory-2); font-size: .86rem; }
+.tour-entry .icon { flex: none; margin-top: 2px; color: var(--forest-700); }
+.tour-mismatch { color: var(--red-800); }
+.tour-members { padding-top: 4px; }
+.tour-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tour-how { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; font-size: .9rem; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+/* ---------------------------------------------------------------- traveller: tour group and Today in the park */
+.t-tour h2 { font: 700 1.25rem/1.3 var(--display); color: var(--forest-950); margin: 0; }
+.t-tour.is-go { border-color: #c4d6ee; background: linear-gradient(180deg, #eaf1fa, var(--paper) 120px); }
+.t-tour.is-late { border-color: #efb9b1; background: linear-gradient(180deg, var(--red-50), var(--paper) 120px); }
+.t-tour.is-wait { border-color: var(--amber-200); }
+.t-tour .t-kicker { color: var(--forest-700); }
+.t-tour-guide { display: flex; align-items: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.t-tour-guide .t-plan-icon { background: var(--forest-700); }
+.t-tour-guide .grow { display: grid; min-width: 0; }
+.t-tour-guide small { color: var(--ink-muted); }
+.t-note { grid-template-columns: auto 1fr; align-items: start; background: var(--ivory-2); }
+.t-note > .icon { color: var(--forest-700); margin-top: 2px; }
+.t-note p { margin: 0; font-size: .92rem; }
+.t-today-head { display: flex; gap: 12px; align-items: flex-start; }
+.t-today-head h2 { font-size: 1.05rem; margin: 0; color: var(--forest-950); }
+.t-today-head p { margin: 2px 0 0; }
+.t-today-icon { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px; background: var(--amber-100); color: #8a5a10; }
+.t-today-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.t-today-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.t-today-list li:first-child { border-top: 0; }
+.t-today-list span { color: var(--ink-muted); font-size: .9rem; text-align: right; }
+.t-today-foot { display: flex; gap: 8px; align-items: flex-start; margin: 0; font-size: .8rem; color: var(--ink-muted); }
+.t-today-foot .icon { flex: none; margin-top: 1px; }
+
+/* ---------------------------------------------------------------- tourism report */
+.report-table th[scope="row"] { font-weight: 700; white-space: nowrap; }
+.report-table td { white-space: nowrap; }
+.report-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.report-list li { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+.report-list li:first-child { border-top: 0; padding-top: 0; }
+.report-list .grow { min-width: 0; display: grid; gap: 2px; }
+.report-sub { font-size: .8rem; font-weight: 750; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); margin: 6px 0 0; }
+dl.report-facts { margin: 0; }
+.report-table tbody th { text-transform: none; letter-spacing: 0; font-size: .92rem; color: var(--ink); background: none; }
+.report-table tbody th a { color: var(--forest-800); }
+dl.report-facts { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); }
+@media (max-width: 560px) {
+  dl.report-facts { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  dl.report-facts dt { margin-top: 12px; font-size: .84rem; }
+  dl.report-facts dt:first-child { margin-top: 0; }
+}
+.t-tour-guide .grow { flex: 1; }

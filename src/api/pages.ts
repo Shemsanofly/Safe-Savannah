@@ -94,6 +94,7 @@ type Role = Operator['role'];
 const STAFF: Role[] = ['ranger', 'admin'];
 const NAV: { route: string; label: string; short: string; icon: string; roles: Role[]; primary?: boolean }[] = [
   { route: 'lodge', label: 'Front desk', short: 'Desk', icon: 'home', roles: ['host'], primary: true },
+  { route: 'tours', label: 'Tour groups', short: 'Tours', icon: 'users', roles: ['agency', 'guide'], primary: true },
   { route: 'ops', label: 'Live map', short: 'Map', icon: 'map', roles: STAFF, primary: true },
   { route: 'access', label: 'Staff gate access', short: 'Gate', icon: 'shield', roles: STAFF, primary: true },
   { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident', roles: STAFF, primary: true },
@@ -101,12 +102,14 @@ const NAV: { route: string; label: string; short: string; icon: string; roles: R
   { route: 'ai', label: 'Check a photo', short: 'Photo', icon: 'cpu', roles: STAFF },
   { route: 'overview', label: 'Gate camera', short: 'Camera', icon: 'camera', roles: STAFF },
   { route: 'stats', label: 'Dashboard', short: 'Stats', icon: 'chart', roles: ['admin'] },
+  { route: 'tourism', label: 'Tourism report', short: 'Report', icon: 'chart', roles: ['admin', 'host'] },
+  { route: 'tours', label: 'Tour operators', short: 'Tours', icon: 'users', roles: ['admin'] },
   { route: 'lodges', label: 'Lodges & camps', short: 'Lodges', icon: 'home', roles: ['admin'] },
   { route: 'zones', label: 'Safety zones', short: 'Zones', icon: 'zone', roles: ['admin'] },
   { route: 'staff', label: 'Staff management', short: 'Staff', icon: 'users', roles: ['admin'] },
   { route: 'people', label: 'Traveller accounts', short: 'Travellers', icon: 'globe', roles: ['admin'] },
   { route: 'settings', label: 'Settings', short: 'Settings', icon: 'settings', roles: STAFF },
-  { route: 'help', label: 'Guide', short: 'Guide', icon: 'help', roles: ['ranger', 'admin', 'host'] },
+  { route: 'help', label: 'Guide', short: 'Guide', icon: 'help', roles: ['ranger', 'admin', 'host', 'agency', 'guide'] },
 ];
 
 export function appPage(opts: {
@@ -124,7 +127,8 @@ export function appPage(opts: {
     demoNotice: opts.demoNotice,
   }).replace(/</g, '\\u003c');
   const role = opts.operator.role;
-  const isHost = role === 'host';
+  const isHost = role === 'host' || role === 'agency' || role === 'guide';
+  const home = role === 'host' ? 'lodge' : role === 'agency' || role === 'guide' ? 'tours' : 'ops';
   const visible = NAV.filter((n) => n.roles.includes(role));
   const navLinks =
     visible
@@ -139,7 +143,7 @@ export function appPage(opts: {
     `<a class="skip-link" href="#main">Skip to main content</a>
 <div class="shell">
   <header class="topbar">
-    <a class="brand" href="${isHost ? '#/lodge' : '#/ops'}" aria-label="Safe Savannah ${isHost ? 'front desk' : 'live map'}">${icon('logo', 'logo')}<span class="brand-name">Safe Savannah</span></a>
+    <a class="brand" href="#/${home}" aria-label="Safe Savannah ${home === 'lodge' ? 'front desk' : home === 'tours' ? 'tour groups' : 'live map'}">${icon('logo', 'logo')}<span class="brand-name">Safe Savannah</span></a>
     <div class="status-strip" id="status-strip" aria-live="polite" aria-label="System status">
       <span class="pill pill-muted"><span class="spinner" aria-hidden="true"></span>Loading status…</span>
     </div>
@@ -148,7 +152,7 @@ export function appPage(opts: {
       <details class="user-menu">
         <summary aria-label="Account menu for ${esc(opts.operator.name)}"><span class="user-avatar">${icon('user')}<span class="duty-dot" data-duty-dot hidden></span></span><span class="user-name">${esc(opts.operator.name)}</span><span class="duty-chip" data-duty-chip hidden></span>${icon('chevron-down', 'icon icon-sm')}</summary>
         <div class="menu-panel">
-          <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${role === 'admin' ? 'Admin' : isHost ? 'Front desk' : 'Ranger'}</span></p>
+          <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${({ admin: 'Admin', host: 'Front desk', agency: 'Tour operator', guide: 'Guide' } as Record<string, string>)[role] ?? 'Ranger'}</span></p>
           ${isHost ? '' : '<label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alerts</span></label>'}
           <a class="btn btn-ghost btn-block" href="/t" target="_blank" rel="noopener">${icon('external')}<span>Open tourist app</span></a>
           <form method="post" action="/logout"><button type="submit" class="btn btn-ghost btn-block">${icon('logout')}<span>Sign out</span></button></form>
