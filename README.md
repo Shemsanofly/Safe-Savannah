@@ -8,6 +8,15 @@ and can raise an SOS from an app, a basic-phone USSD menu or a voice call. Messa
 
 Authorized guides can also bring a declared tourist group through an attraction gate using **local face recognition**. Staff enrollment and attraction permissions are managed by admins. The default gate is simulated; physical controllers use the authenticated integration described below.
 
+![How Safe Savannah works: cameras, tourist SOS and guests' check-ins and tour groups come in; the AI and risk engine open incidents; rangers, lodges and tour operators, and tourists act](docs/how-it-works.png)
+
+*How it works.* Wildlife sightings, tourist SOS and where guests and tour groups are (lodge check-ins, game
+drives and walks, guides verified at the gate) come in. The risk engine weighs the species, the distance to a
+safety zone, the guests out there now and the time of day, and opens an incident for medium risk and above.
+Rangers respond on the live map; lodges run an "Are you safe?" roll call and tour operators see alerts near
+their groups; tourists get a warning in their language, then the all clear. The source of the image is
+`docs/how-it-works.html`.
+
 Built with **TypeScript (Node 22)**, **Fastify**, **PostgreSQL** and plain ES-module front-ends (no build step,
 no CDN). Leaflet is served locally; only map tiles need internet.
 

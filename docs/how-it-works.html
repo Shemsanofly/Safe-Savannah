@@ -1,0 +1,135 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- Source of docs/how-it-works.png. Render with the app running (fonts load from it):
+     a 1600x1000 viewport at device scale 1.5, screenshot of the full page. -->
+<style>
+@font-face{font-family:Inter;src:url('http://127.0.0.1:8080/static/vendor/fonts/inter/inter-latin-wght-normal.woff2');font-weight:100 900}
+@font-face{font-family:Fraunces;src:url('http://127.0.0.1:8080/static/vendor/fonts/fraunces/fraunces-latin-wght-normal.woff2');font-weight:100 900}
+*{box-sizing:border-box;margin:0}
+body{width:1600px;height:1000px;font-family:Inter,sans-serif;background:#f8f4ea;color:#1c2a22;position:relative;overflow:hidden}
+.icon{width:26px;height:26px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+header{display:flex;align-items:center;gap:16px;padding:30px 48px 0}
+header .logo{width:48px;height:48px}
+header h1{font-family:Fraunces;font-size:38px;font-weight:600;color:#10261c;letter-spacing:-.02em}
+header p{font-size:17px;color:#5b665f;margin-top:2px}
+.colhead{position:absolute;top:118px;font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#8a7a55}
+.box{position:absolute;border-radius:18px;padding:15px 18px;background:#fffdf8;border:1.5px solid #ddd2ba;box-shadow:0 6px 18px rgba(30,50,35,.06)}
+.box h3{display:flex;align-items:center;gap:10px;font-size:19px;color:#10261c}
+.box p{font-size:14px;line-height:1.45;color:#47534b;margin-top:6px}
+.box p b{color:#10261c}
+.ic{display:grid;place-items:center;width:42px;height:42px;border-radius:12px;flex:none}
+.g .ic{background:#e3eee5;color:#1f4a38}.r .ic{background:#a4231b;color:#fff}.a .ic{background:#f6e3bd;color:#7a4a0c}.b .ic{background:#2563a6;color:#fff}
+.r{border-color:#e9b3aa;background:#fdf2ef}
+.b{border-color:#c4d6ee;background:#eef4fb}
+.core{position:absolute;left:470px;top:150px;width:600px;height:560px;border-radius:26px;border:2px dashed #9fbfa9;background:#eef4ee}
+.core .label{position:absolute;top:-14px;left:24px;background:#1f4a38;color:#fff;font-size:14px;font-weight:800;padding:5px 14px;border-radius:999px;letter-spacing:.04em}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{font-size:12.5px;font-weight:700;padding:4px 9px;border-radius:999px;background:#fff;border:1px solid #cfe0d2;color:#1f4a38}
+.chip.new{border-color:#9db9e0;color:#1d4f86}
+.lv{display:flex;gap:6px;margin-top:8px}
+.lv span{font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px;color:#fff}
+svg.wires{position:absolute;inset:0;width:1600px;height:1000px;pointer-events:none}
+.wl{font-size:12.5px;font-weight:700;fill:#5b4a24}
+.legend{position:absolute;left:48px;bottom:24px;right:48px;display:flex;gap:26px;font-size:14px;color:#47534b;align-items:center}
+.legend i{display:inline-block;width:28px;height:4px;border-radius:2px;margin-right:8px;vertical-align:middle}
+.legend b{color:#10261c}
+.track{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+.track span{font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;background:#fff;border:1px solid #e9b3aa;color:#8f1d16}
+.langs{display:flex;gap:4px;margin-top:8px;flex-wrap:wrap}
+.langs span{font-size:11.5px;font-weight:800;padding:2px 7px;border-radius:6px;background:#fff;border:1px solid #e9b3aa;color:#8f1d16}
+</style></head><body><svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0" aria-hidden="true" focusable="false">
+<symbol id="i-logo" viewBox="0 0 32 32"><circle cx="16" cy="16" r="15" fill="#e2a33b"/><path d="M2.6 21.5c4.4-1.6 8.6-1.3 13.4-2.1 4.8-.8 9.2-.6 13.4.6A15 15 0 0 1 2.6 21.5z" fill="#173a2c"/><path d="M15 20.6l.9-8h1.4l.9 8z" fill="#173a2c"/><path d="M6.5 12.2c3.8-2.6 15.2-2.9 19.4-.2-1.9 1.3-17.4 1.6-19.4.2z" fill="#173a2c"/><path d="M10.4 10.3c2-2.4 9.3-2.6 11.5-.3-2.4.6-9.2.8-11.5.3z" fill="#173a2c"/></symbol>
+<symbol id="i-camera" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="6.5" width="13" height="11" rx="2"/><path d="m15.5 10.5 6-3.5v10l-6-3.5"/></g></symbol>
+<symbol id="i-siren" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 18v-6a5.5 5.5 0 0 1 11 0v6"/><path d="M4 18.5h16v2H4z"/><path d="M12 2.5v2"/><path d="m4.5 5.5 1.4 1.4"/><path d="m19.5 5.5-1.4 1.4"/><path d="M12 12v3"/></g></symbol>
+<symbol id="i-cpu" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx=".8"/><path d="M9.5 2.5V6M14.5 2.5V6M9.5 18v3.5M14.5 18v3.5M2.5 9.5H6M2.5 14.5H6M18 9.5h3.5M18 14.5h3.5"/></g></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/></g></symbol>
+<symbol id="i-incident" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 4.2 2.8 17.3A2 2 0 0 0 4.5 20.3h15a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4.5"/><path d="M12 17.2h.01"/></g></symbol>
+<symbol id="i-zone" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20.5 8 6.5h8l3 14z" stroke-dasharray="2.6 2.4"/><circle cx="12" cy="14" r="1.6"/></g></symbol>
+<symbol id="i-radio" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="7.5" width="11" height="14" rx="2"/><path d="M14 7.5V2.5"/><path d="M9.5 11.5h5"/><circle cx="12" cy="16.5" r="1.8"/></g></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.7a3.5 3.5 0 0 1 0 6.6"/><path d="M18 14.3a6.5 6.5 0 0 1 3.5 5.7"/></g></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5v10h13v-10"/><path d="M10 19.5v-5h4v5"/></g></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></g></symbol>
+<symbol id="i-check-circle" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12.3 2.8 2.8L16.2 9.5"/></g></symbol>
+<symbol id="i-paw" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="10" r="1.8"/><circle cx="10.5" cy="6.5" r="1.8"/><circle cx="14.5" cy="6.5" r="1.8"/><circle cx="18" cy="10" r="1.8"/><path d="M12.5 11.5c-2.5 0-5 3.5-5 5.5 0 1.6 1.3 2.5 2.7 2.2 1-.2 1.6-.6 2.3-.6s1.3.4 2.3.6c1.4.3 2.7-.6 2.7-2.2 0-2-2.5-5.5-5-5.5z"/></g></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7.5-3.5 7.5-9.5V5.5L12 3 4.5 5.5v6C4.5 17.5 12 21 12 21z"/></g></symbol>
+</svg>
+
+<header><svg class="logo"><use href="#i-logo"/></svg><div><h1>How Safe Savannah works</h1><p>From a wildlife sighting or a call for help to rangers, lodges and guests, in seconds.</p></div></header>
+
+<div class="colhead" style="left:48px">1 · What comes in</div>
+<div class="colhead" style="left:494px">2 · Safe Savannah decides</div>
+<div class="colhead" style="left:1190px">3 · Who acts</div>
+
+<div class="box g" id="cam" style="left:48px;top:160px;width:340px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-camera"/></svg></span>Camera or photo</h3>
+ <p>Park cameras and ranger uploads send images of animals near lodges, camps, trails and roads.</p></div>
+<div class="box r" id="sos" style="left:48px;top:372px;width:340px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-siren"/></svg></span>Tourist SOS</h3>
+ <p>One tap in the app, a USSD menu on any basic phone, or a call. Medical, wildlife, vehicle or personal safety.</p></div>
+<div class="box b" id="guests" style="left:48px;top:586px;width:340px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-home"/></svg></span>Guests and tour groups</h3>
+ <p>Guests <b>check in at their lodge by QR</b>, check out on game drives and walks, and ask for a night escort. A tour group is <b>in the park</b> once its guide is verified at the gate.</p></div>
+
+<div class="core"><span class="label">SAFE SAVANNAH</span></div>
+<div class="box g" id="ai" style="left:500px;top:178px;width:250px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-cpu"/></svg></span>AI detects</h3>
+ <p>Names the animal and how sure it is.</p></div>
+<div class="box g" id="risk" style="left:790px;top:178px;width:250px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-target"/></svg></span>Risk engine</h3>
+ <div class="chips"><span class="chip">Species</span><span class="chip">Distance to zone</span><span class="chip new">Guests out there now</span><span class="chip">Time of day</span></div></div>
+<div class="box g" id="inc" style="left:540px;top:430px;width:420px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-incident"/></svg></span>Incident opened</h3>
+ <p>Medium risk or above, and every SOS. Most urgent first: SOS, then critical, high, medium.</p>
+ <div class="lv"><span style="background:#a4231b">Critical</span><span style="background:#d0521f">High</span><span style="background:#c88a1f">Medium</span><span style="background:#7d8a80">Low: logged only</span></div></div>
+
+<div class="box a" id="admin" style="left:560px;top:770px;width:420px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-zone"/></svg></span>Admin</h3>
+ <p>Draws safety zones; manages staff, lodges and tour operators; reads the <b>tourism report</b>: guests accounted for, response times.</p></div>
+
+<div class="box g" id="ranger" style="left:1190px;top:160px;width:362px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-radio"/></svg></span>Rangers</h3>
+ <p>See it on the live map, press <b>I'm responding</b>, call the guide of any tour group nearby, coordinate by radio, then <b>Resolve</b>.</p></div>
+<div class="box b" id="lodge" style="left:1190px;top:372px;width:362px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-users"/></svg></span>Lodges and tour operators</h3>
+ <p>The front desk runs an <b>"Are you safe?" roll call</b> of every guest and sends escorts. Tour operators see alerts near their groups.</p></div>
+<div class="box r" id="tourist" style="left:1190px;top:600px;width:362px">
+ <h3><span class="ic"><svg class="icon"><use href="#i-globe"/></svg></span>Tourists</h3>
+ <p>A warning with what to do, <b>I'm safe</b> in one tap, then the <b>all clear</b>. SOS tracker: Received → Ranger responding → Resolved. Plus <b>Today in the park</b> (delayed, no places).</p>
+ <div class="langs"><span>EN</span><span>SW</span><span>FR</span><span>DE</span><span>IT</span><span>ES</span><span>中文</span></div></div>
+
+<svg class="wires" id="wires"><defs>
+ <marker id="mg" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2e6b51"/></marker>
+ <marker id="mr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a4231b"/></marker>
+ <marker id="ma" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c88a1f"/></marker>
+ <marker id="mb" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563a6"/></marker>
+</defs></svg>
+
+<div class="legend"><span><i style="background:#2e6b51"></i><b>Wildlife alert</b></span><span><i style="background:#a4231b"></i><b>Emergency (SOS)</b></span><span><i style="background:#2563a6"></i><b>Guests, lodges, tours</b></span><span><i style="background:#c88a1f"></i><b>Set-up</b></span>
+ <span style="margin-left:auto">Alerts reach phones by SMS and voice through <b>Africa's Talking</b> · the radio procedure always comes first.</span></div>
+
+<script>
+const svg=document.getElementById('wires');const R=(id)=>document.getElementById(id).getBoundingClientRect();
+const NS='http://www.w3.org/2000/svg';
+function path(d,color,marker,label,lx,ly,dash){const p=document.createElementNS(NS,'path');p.setAttribute('d',d);p.setAttribute('fill','none');p.setAttribute('stroke',color);p.setAttribute('stroke-width','3');if(dash)p.setAttribute('stroke-dasharray','7 6');p.setAttribute('marker-end','url(#'+marker+')');svg.append(p);
+ if(label){const t=document.createElementNS(NS,'text');t.setAttribute('x',lx);t.setAttribute('y',ly);t.setAttribute('class','wl');t.setAttribute('text-anchor','middle');t.textContent=label;const bg=document.createElementNS(NS,'rect');svg.append(bg);svg.append(t);const b=t.getBBox();bg.setAttribute('x',b.x-6);bg.setAttribute('y',b.y-3);bg.setAttribute('width',b.width+12);bg.setAttribute('height',b.height+6);bg.setAttribute('rx',8);bg.setAttribute('fill','#f8f4ea');}}
+const cam=R('cam'),sos=R('sos'),gu=R('guests'),ai=R('ai'),risk=R('risk'),inc=R('inc'),ad=R('admin'),rg=R('ranger'),lo=R('lodge'),to=R('tourist');
+const G='#2e6b51',RD='#a4231b',A='#c88a1f',BL='#2563a6';
+const midY=(r)=>r.top+r.height/2;
+// camera -> AI -> risk -> incident
+path(`M${cam.right},${midY(cam)} L${ai.left-4},${midY(ai)}`,G,'mg','image',(cam.right+ai.left)/2,midY(cam)-12);
+path(`M${ai.right},${midY(ai)} L${risk.left-4},${midY(ai)}`,G,'mg');
+path(`M${risk.left+risk.width/2},${risk.bottom} C${risk.left+risk.width/2},${risk.bottom+50} ${inc.right-80},${inc.top-60} ${inc.right-80},${inc.top-4}`,G,'mg','risk ≥ medium',risk.left+risk.width/2+12,risk.bottom+40);
+// SOS -> incident
+path(`M${sos.right},${midY(sos)} C${sos.right+60},${midY(sos)} ${inc.left-70},${inc.top+40} ${inc.left-4},${inc.top+40}`,RD,'mr','SOS + location',(sos.right+inc.left)/2-8,midY(sos)-4);
+// guests -> incident from below: who is out, and where (the risk engine counts them)
+const gTo=inc.left+110;
+path(`M${gu.right},${midY(gu)} C${gu.right+150},${midY(gu)} ${gTo},${inc.bottom+90} ${gTo},${inc.bottom+4}`,BL,'mb','who is out, and where',gu.right+118,midY(gu)-14);
+// admin -> core (set-up)
+path(`M${ad.left+ad.width/2+60},${ad.top} L${ad.left+ad.width/2+60},${inc.bottom+4}`,A,'ma','safety zones, lodges, people',ad.left+ad.width/2+172,ad.top-28,true);
+// incident -> rangers / lodges / tourists
+const mx=(inc.right+rg.left)/2;
+path(`M${inc.right},${inc.top+28} C${inc.right+120},${inc.top+28} ${rg.left-120},${midY(rg)} ${rg.left-4},${midY(rg)}`,G,'mg','live map + SMS / call',mx+4,midY(rg)+52);
+path(`M${inc.right},${inc.top+inc.height/2} C${inc.right+110},${inc.top+inc.height/2} ${lo.left-110},${midY(lo)} ${lo.left-4},${midY(lo)}`,BL,'mb','alert at the lodge',mx+6,(inc.top+inc.height/2+midY(lo))/2-6);
+path(`M${inc.right},${inc.bottom-24} C${inc.right+120},${inc.bottom-24} ${to.left-120},${midY(to)} ${to.left-4},${midY(to)}`,G,'mg','warning: app + SMS',mx+8,(inc.bottom-24+midY(to))/2+30);
+// lodge -> tourists: roll call
+path(`M${lo.left+lo.width/2},${lo.bottom} L${lo.left+lo.width/2},${to.top-4}`,BL,'mb','"Are you safe?"',lo.left+lo.width/2+72,(lo.bottom+to.top)/2+5);
+</script></body></html>
