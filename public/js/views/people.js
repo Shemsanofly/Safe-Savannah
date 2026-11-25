@@ -2,11 +2,12 @@
 import { api, BOOT, clear, confirmDialog, el, fmtDate, icon, initials, lodgeToday, runAction, toast, validateRequired } from '../lib.js';
 
 export function mount(main, ctx) {
-  let tab = ctx.params.tab === 'tourists' ? 'tourists' : 'staff';
+  if (BOOT.operator.role !== 'admin') { main.append(el('p', { role: 'alert' }, 'Only admins can add or manage staff.')); return {}; }
+  let tab = ctx.touristOnly || ctx.params.tab === 'tourists' ? 'tourists' : 'staff';
   let areas = [];
   const tabs = el('div', { class: 'seg', role: 'group', 'aria-label': 'Section' });
   const body = el('div', { class: 'stack' });
-  main.append(el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'People'), el('p', { class: 'sub' }, 'Rangers, admins and registered tourists.')), tabs), body);
+  main.append(el('div', { class: 'page-head' }, el('div', {}, el(ctx.embedded ? 'h2' : 'h1', {}, ctx.staffOnly ? 'Staff accounts' : ctx.touristOnly ? 'Traveller accounts' : 'People'), el('p', { class: 'sub' }, ctx.staffOnly ? 'Only admins can create staff accounts. Add a reference photo and gate permission below.' : 'Registered staff and travellers.')), ctx.staffOnly || ctx.touristOnly ? null : tabs), body);
 
   const renderTabs = () => clear(tabs, [['staff', 'Rangers & admins'], ['tourists', 'Tourists']].map(([v, l]) =>
     el('button', { type: 'button', 'aria-pressed': String(tab === v), onclick: () => { tab = v; ctx.navigate(`#/people?tab=${v}`, { replace: true }); } }, l)));
@@ -62,7 +63,7 @@ export function mount(main, ctx) {
         el('div', { class: 'person-sub' }, el('span', {}, o.role === 'admin' ? 'Admin' : 'Ranger'), el('span', {}, areaName(o.area_id)),
           o.phone ? el('a', { href: `tel:${o.phone}` }, o.phone) : el('span', { class: 'warn-text' }, 'No phone'))),
       el('span', { class: `person-pill tone-${duty[1]}` }, duty[0]),
-      el('div', { class: 'person-actions' }, edit, menu),
+      el('div', { class: 'person-actions' }, el('a', { class: 'btn btn-sm', href: `#/staff?staff=${encodeURIComponent(o.id)}` }, 'Reference photo'), edit, menu),
       status);
   }
 
@@ -188,5 +189,5 @@ export function mount(main, ctx) {
   }
 
   load();
-  return { onParams(p) { tab = p.tab === 'tourists' ? 'tourists' : 'staff'; load(); } };
+  return { refresh: load, onParams(p) { tab = ctx.touristOnly || p.tab === 'tourists' ? 'tourists' : 'staff'; load(); } };
 }

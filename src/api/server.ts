@@ -42,6 +42,11 @@ import { toCsv } from './csv.js';
 import { appPage, loginPage } from './pages.js';
 import { handleUssd } from './ussd.js';
 import { registerPlatformRoutes, voiceCallbackUrl } from './platformRoutes.js';
+import { registerGateRoutes } from './gateRoutes.js';
+import { registerFaceGateRoutes } from './faceGateRoutes.js';
+import type { FaceExtractor } from '../gate/faceRuntime.js';
+import type { GateTransport } from '../gate/controller.js';
+import { demoNotice } from '../config.js';
 import { handleVoice } from './voiceWebhook.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -192,6 +197,7 @@ const CSP = [
   "default-src 'self'",
   // Map tiles come from OpenStreetMap; everything else is same-origin.
   "img-src 'self' data: blob: https://tile.openstreetmap.org",
+  "media-src 'self' blob:",
   "style-src 'self'",
   "script-src 'self'",
   "connect-src 'self'",
@@ -202,7 +208,7 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
-export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean } = {}): Promise<FastifyInstance> {
+export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean; faces?: FaceExtractor; transport?: GateTransport } = {}): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger === false ? false : { level: cfg.LOG_LEVEL } });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
   await app.register(formbody);
@@ -280,7 +286,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
 
   app.get('/login', async (req, reply) => {
     if (req.operator) return reply.redirect('/');
-    return reply.type('text/html').send(loginPage({ error: null }));
+    return reply.type('text/html').send(loginPage({ error: null, demoNotice: demoNotice(cfg) }));
   });
 
   let failedLogins = 0;
@@ -293,7 +299,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
       return reply
         .code(401)
         .type('text/html')
-        .send(loginPage({ error: 'Staff ID or PIN is not right. Check both, or ask an admin to reset your PIN.', operatorId: body.success ? body.data.operatorId : '' }));
+        .send(loginPage({ error: 'Staff ID or PIN is not right. Check both, or ask an admin to reset your PIN.', operatorId: body.success ? body.data.operatorId : '', demoNotice: demoNotice(cfg) }));
     }
     failedLogins = 0;
     // +1 ms so a session issued in the same millisecond as a PIN reset is still accepted.
@@ -321,6 +327,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
         permissions: permissions(req.operator!, cfg),
         timeZone: cfg.TIMEZONE,
         staleSeconds: cfg.STALE_FEED_SECONDS,
+        demoNotice: demoNotice(cfg),
       }),
     ),
   );
@@ -365,6 +372,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
     const cameras = camerasView(snap, now, perms.canViewTechnical);
     const cameraState = new Map(cameras.map((c) => [c.id, c.feedState]));
     const active = snap.events.filter((e) => e.status === 'open' || e.status === 'acknowledged');
+    const gatePending = req.operator!.role === 'admin' ? Number((await db.query("SELECT count(*) AS n FROM gate_access_attempts WHERE decision = 'denied' AND reviewed_at IS NULL")).rows[0].n) : 0;
     return {
       serverTime: new Date(now).toISOString(),
       operator: req.operator,
@@ -372,6 +380,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
         active: active.length,
         unacknowledged: active.filter((e) => e.status === 'open').length,
         acknowledged: active.filter((e) => e.status === 'acknowledged').length,
+        gatePending,
       },
       cameras,
       zones: snap.zones.map((z) => ({
@@ -601,6 +610,8 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean 
   });
 
   await registerPlatformRoutes(app, cfg, db, { requireStaff: requireOperator, requireAdmin });
+  await registerGateRoutes(app, db, { requireStaff: requireOperator, requireAdmin });
+  await registerFaceGateRoutes(app, cfg, db, { requireStaff: requireOperator, requireAdmin }, { faces: opts.faces, transport: opts.transport });
   await registerWebhooks(app, cfg, db);
   return app;
 }

@@ -43,10 +43,10 @@ ${body}
 </html>`;
 }
 
-export function loginPage({ error, operatorId = '' }: { error: string | null; operatorId?: string }): string {
+export function loginPage({ error, operatorId = '', demoNotice }: { error: string | null; operatorId?: string; demoNotice?: string | null }): string {
   return layout(
     'Sign in · Safe Savannah',
-    `<main class="login">
+    `${demoNotice ? `<div class="environment-banner" role="note">${icon('flask')}<span>${esc(demoNotice)}</span></div>` : ''}<main class="login">
   <img class="login-scene" src="/static/img/savanna.svg" alt="" aria-hidden="true">
   <div class="login-scrim" aria-hidden="true"></div>
   <section class="login-brand" aria-labelledby="brand-title">
@@ -63,7 +63,7 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
     <form method="post" action="/login" class="login-card" novalidate data-login>
       <div class="login-card-head">
         <h2>Staff sign in</h2>
-        <p class="muted">For rangers and admins.</p>
+        <p class="muted">For authorized rangers, gate staff and admins. Travellers use the traveller app below.</p>
       </div>
       ${error ? `<div class="alert alert-error" role="alert" id="login-error">${icon('alert')}<span>${esc(error)}</span></div>` : ''}
       <div class="field">
@@ -92,13 +92,15 @@ export function loginPage({ error, operatorId = '' }: { error: string | null; op
 
 const NAV: { route: string; label: string; short: string; icon: string; admin?: boolean; primary?: boolean }[] = [
   { route: 'ops', label: 'Live map', short: 'Map', icon: 'map', primary: true },
+  { route: 'access', label: 'Staff gate access', short: 'Gate', icon: 'shield', primary: true },
   { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident', primary: true },
   { route: 'detections', label: 'Detections', short: 'Detections', icon: 'paw' },
-  { route: 'ai', label: 'Check a photo', short: 'Photo', icon: 'cpu', primary: true },
+  { route: 'ai', label: 'Check a photo', short: 'Photo', icon: 'cpu' },
   { route: 'overview', label: 'Gate camera', short: 'Camera', icon: 'camera' },
   { route: 'stats', label: 'Dashboard', short: 'Stats', icon: 'chart', admin: true },
   { route: 'zones', label: 'Safety zones', short: 'Zones', icon: 'zone', admin: true },
-  { route: 'people', label: 'People', short: 'People', icon: 'users', admin: true },
+  { route: 'staff', label: 'Staff management', short: 'Staff', icon: 'users', admin: true },
+  { route: 'people', label: 'Traveller accounts', short: 'Travellers', icon: 'globe', admin: true },
   { route: 'settings', label: 'Settings', short: 'Settings', icon: 'settings' },
   { route: 'help', label: 'Guide', short: 'Guide', icon: 'help' },
 ];
@@ -108,12 +110,14 @@ export function appPage(opts: {
   permissions: Record<string, boolean>;
   timeZone: string;
   staleSeconds: number;
+  demoNotice?: string | null;
 }): string {
   const boot = JSON.stringify({
     operator: { id: opts.operator.id, name: opts.operator.name, role: opts.operator.role },
     permissions: opts.permissions,
     timeZone: opts.timeZone,
     staleSeconds: opts.staleSeconds,
+    demoNotice: opts.demoNotice,
   }).replace(/</g, '\\u003c');
   const isAdmin = opts.operator.role === 'admin';
   const navLinks =
@@ -147,6 +151,7 @@ export function appPage(opts: {
     </div>
   </header>
   <nav class="sidenav" id="sidenav" aria-label="Main">${navLinks}</nav>
+  ${opts.demoNotice ? `<div class="environment-banner app-environment" role="note">${icon('flask')}<span>${esc(opts.demoNotice)}</span></div>` : ''}
   <div class="conn-banner" id="conn-banner" role="alert" hidden></div>
   <main id="main" class="main" tabindex="-1">
     <div class="view-loading"><span class="spinner" aria-hidden="true"></span> Loading…</div>
@@ -159,7 +164,7 @@ export function appPage(opts: {
   );
 }
 
-export function touristPage(opts: { emergencyLine: string }): string {
+export function touristPage(opts: { emergencyLine: string; demoNotice?: string | null }): string {
   const boot = JSON.stringify({ emergencyLine: opts.emergencyLine }).replace(/</g, '\\u003c');
   return layout(
     'Safe Savannah · Traveller safety',
@@ -175,6 +180,7 @@ export function touristPage(opts: { emergencyLine: string }): string {
       </div>
     </div>
   </header>
+  ${opts.demoNotice ? `<div class="environment-banner" role="note">${icon('flask')}<span>${esc(opts.demoNotice)}</span></div>` : ''}
   <div class="conn-banner t-conn" id="conn-banner" role="alert" hidden></div>
   <main id="t-main" class="t-main" tabindex="-1"><div class="view-loading"><span class="spinner" aria-hidden="true"></span> Loading…</div></main>
 </div>

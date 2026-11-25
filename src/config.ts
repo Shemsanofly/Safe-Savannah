@@ -33,6 +33,19 @@ const EnvSchema = z.object({
 
   DATA_DIR: z.string().default('data'),
 
+  GATE_FACE_PYTHON: z.string().default('python'),
+  GATE_FACE_PYTHON_PATH: z.string().default('data/face-runtime/python'),
+  FACE_TEMPLATE_KEY: z.string().regex(/^[a-f0-9]{64}$/i, 'Use a random 32-byte key encoded as 64 hex characters').optional(),
+  GATE_FACE_THRESHOLD: z.coerce.number().min(0.4).max(0.95).default(0.5),
+  GATE_FACE_MARGIN: z.coerce.number().min(0.03).max(0.3).default(0.08),
+  GATE_CONTROLLER_MODE: z.enum(['simulated', 'http']).default('simulated'),
+  GATE_CONTROLLER_URL: z.string().url().optional(),
+  GATE_CONTROLLER_TOKEN: z.string().min(24).optional(),
+  GATE_CONTROLLER_GATE_ID: z.string().max(64).optional(),
+  GATE_CONTROLLER_ZONE_ID: z.coerce.number().int().positive().optional(),
+  GATE_STATION_OPERATOR_ID: z.string().min(2).max(32).optional(),
+  GATE_PULSE_MS: z.coerce.number().int().min(250).max(5000).default(1000),
+
   CAMERA_ID: z.string().default('cam-1'),
   CAMERA_LABEL: z.string().default('Approach camera 1'),
   /** Video file path, /dev/videoN, or rtsp:// URL. */
@@ -103,6 +116,16 @@ export interface AppConfig extends Env {
   ussdAllowlist: Map<string, string>;
 }
 
+export function demoNotice(cfg: AppConfig): string | null {
+  const modes = [
+    cfg.DETECTOR === 'scripted' || cfg.SIMULATOR_ENABLED ? 'simulated wildlife detections' : null,
+    cfg.SMS_PROVIDER === 'mock' ? 'simulated SMS' : null,
+    cfg.VOICE_PROVIDER === 'simulated' ? 'simulated calls' : null,
+    cfg.GATE_CONTROLLER_MODE === 'simulated' ? 'simulated gate' : null,
+  ].filter(Boolean);
+  return modes.length ? `Demo environment — ${modes.join(', ')}.` : null;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   // An empty KEY= in .env means "not set", not an empty value.
   const cleaned = Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined && v.trim() !== ''));
@@ -117,6 +140,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   if (cfg.USSD_ENABLED && !cfg.WEBHOOK_TOKEN) {
     throw new Error('USSD_ENABLED=true requires WEBHOOK_TOKEN');
+  }
+  if (cfg.GATE_CONTROLLER_MODE === 'http') {
+    if (!cfg.GATE_CONTROLLER_URL || !cfg.GATE_CONTROLLER_TOKEN || !cfg.GATE_CONTROLLER_GATE_ID || !cfg.GATE_CONTROLLER_ZONE_ID || !cfg.GATE_STATION_OPERATOR_ID) {
+      throw new Error('HTTP gate control requires a controller URL, token, gate ID, zone ID and station operator ID');
+    }
+    if (!cfg.FACE_TEMPLATE_KEY || !cfg.COOKIE_SECURE || cfg.SESSION_SECRET.startsWith('dev-only-') || cfg.SESSION_SECRET.startsWith('change-me')) {
+      throw new Error('Physical gate mode requires FACE_TEMPLATE_KEY, a private SESSION_SECRET and COOKIE_SECURE=true behind HTTPS');
+    }
+    const url = new URL(cfg.GATE_CONTROLLER_URL);
+    if (url.username || url.password || url.search || url.hash || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)))) {
+      throw new Error('Gate controller URLs must use HTTPS (HTTP is allowed only on loopback), without embedded credentials or query strings');
+    }
   }
   return {
     ...cfg,

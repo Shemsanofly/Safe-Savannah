@@ -24,6 +24,9 @@
     "eval": "tsx src/cli/evalClips.ts",
     "report:timings": "tsx src/cli/reportTimings.ts",
     "model:check": "tsx src/cli/modelCheck.ts",
+    "face:setup": "python scripts/setup_face_models.py",
+    "face:check": "node scripts/check_face_runtime.mjs",
+    "face:sample": "tsx src/cli/enrollDemoGuide.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

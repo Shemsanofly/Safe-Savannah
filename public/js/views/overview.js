@@ -6,7 +6,7 @@ export function mount(main) {
   const attention = el('div', { class: 'attention', role: 'alert', hidden: true });
   const camera = createCameraFeed();
   main.append(
-    el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'Gate camera'), el('p', { class: 'sub' }, 'The fixed camera on the guest path, live.'))),
+    el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'Gate camera'), el('p', { class: 'sub' }, 'The fixed wildlife camera on the guest path.')), el('a', { class: 'btn btn-primary', href: '#/access' }, icon('shield'), 'Check staff entry')),
     attention,
     camera.root,
   );

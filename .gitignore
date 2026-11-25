@@ -10,3 +10,4 @@ fixtures/*.mkv
 fixtures/local/
 *.log
 models/*.manifest.json
+models/*.download

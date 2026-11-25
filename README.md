@@ -6,6 +6,8 @@ coordinate responses alongside, never instead of, their radio and phone procedur
 and can raise an SOS from an app, a basic-phone USSD menu or a voice call. Messages go out through
 **Africa's Talking**.
 
+Authorized guides can also bring a declared tourist group through an attraction gate using **local face recognition**. Staff enrollment and attraction permissions are managed by admins. The default gate is simulated; physical controllers use the authenticated integration described below.
+
 Built with **TypeScript (Node 22)**, **Fastify**, **PostgreSQL** and plain ES-module front-ends (no build step,
 no CDN). Leaflet is served locally; only map tiles need internet.
 
@@ -82,6 +84,38 @@ load the demo data.
 
 ## Screens
 
+### Guide face entry
+
+Open **Staff gate access** (`/#/access`). The camera recognizes an enrolled guide so the guide can accompany a declared tourist group through an attraction gate. The guide does **not** enter a PIN on arrival. A station attendant signs in once to activate the camera.
+
+Install the local CPU face runtime and checksum-pinned OpenCV YuNet/SFace models:
+
+```bash
+python -m pip install --target data/face-runtime/python -r scripts/face-requirements.txt
+npm run face:setup
+node scripts/setup_face_key.mjs
+npm run build
+npm run face:check
+```
+
+Set `GATE_FACE_PYTHON` to the interpreter used for installation if several Python versions are installed. Keep `.env` private and back up `FACE_TEMPLATE_KEY`; existing encrypted enrollments cannot be read with a different key. Restart the app after configuration changes.
+
+1. An admin opens **Staff management** (`/#/staff`), creates the staff account, and registers a reference picture with the staff member's authorization. The admin can upload one clear photograph or capture three live samples. The server computes face features from the images; it never trusts browser-supplied identities or embeddings. Duplicate or inconsistent enrollments are rejected.
+2. In the same admin page, select the **gate station location** and separately grant each staff member attraction access, optionally with an expiry. The staff verification page uses that configured gate; staff cannot choose a different location. A matching face without permission for that attraction is shown as **Face matched — gate access not granted**, rather than an unrecognized face.
+3. Staff open **Staff gate access** (`/#/access`), activate the camera and authenticate against the admin's reference picture. This page contains no staff creation, reference gallery, demo controls or gate reviews. Only the guide stands in the recognition area; tourists wait behind. Camera verification and current attraction permission are both required. The simulation demonstrates a head-turn check; physical mode uses a trusted anti-spoof camera and supports passive arrival verification.
+4. **Gate reviews** and the **photo comparison demo** are admin-only sections of Staff management. The demo compares the saved portrait or a test picture against enrolled staff and explains whether a failure is recognition or permission. It never sends a gate command. Review history and review counts are withheld from staff APIs; staff cannot record reviews.
+5. `GATE_CONTROLLER_MODE=simulated` is the default: completed camera authentication creates a simulated eight-second gate cycle. Physical hardware is not contacted. A real controller uses the documented HTTP integration, fresh controller safety status and a trusted, frame-bound anti-spoof observation. See [gate controller integration](docs/gate-controller.md).
+
+Arrival frames are processed locally and discarded. Admin-registered portraits are retained privately for staff records and demonstrations; only admins can view them. Face feature vectors use AES-256-GCM encryption. Erasing a reference removes the portrait and encrypted template. Only admins can create staff, register or erase references, set the gate station, change attraction permissions, run picture demonstrations and review gate attempts. Recognition sessions expire, repeated frames cannot advance a head-turn check, guide cooldowns prevent repeat openings, and uncertain physical commands are never automatically retried.
+
+The head-turn flow is a prototype motion check, **not validated presentation-attack detection**. Face-match thresholds need evaluation with the actual staff, lighting and camera. Physical mode requires a trusted anti-spoof sensor and local gate-controller safety interlocks; the software does not drive a motor directly or close a barrier on a timer. Tourist counts are declared, not measured; tourist ticket verification and anti-tailgating hardware are separate integrations. Face recognition establishes an enrolled identity; it does not classify someone as a poacher.
+
+The previous ID/PIN checks remain under `/#/access-manual` as an admin-only fallback review workflow; those checks never operate the gate.
+
+For a user-authorized sample photograph, run `npm run face:sample -- --photo <local-file> --zone <zone-id> [--id demo-guide] [--name "Demo guide"]`. This creates or updates a **demo** account and simulation-only face template, authorizes the selected demo attraction, and verifies a transformed-image match. The portrait appears in admin Staff management. Physical mode excludes demo profiles; a real staff member needs a separately authorized live or reference-photo enrollment and trusted liveness verification on arrival. Uploading a reference picture never proves that the arriving person is live.
+
+The interface labels simulated detection, SMS and calling modes, marks stale traveller status, uses precise reported-alert wording, and explains the initial staff and traveller workflows. Real camera coverage and provider delivery still need validation before operational use.
+
 All three interfaces are built for **phones first** and spread out on larger screens. Phones get a bottom tab
 bar; computers get a top bar (traveller) or side menu (staff); tablets get a compact icon rail. Long lists
 become compact cards on phones, and less-used filters fold away under **Filters & sort**. Screenshots below use
@@ -109,7 +143,7 @@ the seeded demo data; "Simulated" and "Demo" labels are shown exactly as in the 
 
 | Screen | What it shows |
 |---|---|
-| **Home** | A trip card (camp, dates, group), then **one safety status**: *All clear*, *Rangers are watching wildlife nearby*, or a *Warning* / *Danger* card with the top three things to do. Below: a large **SOS** button and quick actions (share location, call the emergency line, safety tips). An open SOS shows its tracker at the top. |
+| **Home** | A trip card (camp, dates, group), then **one reported status**: *No active alerts reported*, *Rangers are watching wildlife nearby*, or a *Warning* / *Danger* card with the top three things to do. The last update time and stale-data notice show whether the information is current. Below: a large **SOS** button and quick actions (share location, call the emergency line, safety tips). An open SOS shows its tracker at the top. |
 | **Alerts** | *Happening now* first, each with a Danger / Warning / Advisory label and a "What to do" list; earlier alerts (last 48 h) fold up. Exact animal positions are never shown. |
 | **SOS** | Three steps: pick the emergency type, add details if you want, then **Send SOS** (with a confirmation). After sending, a live tracker shows *Received → [ranger] is responding → Resolved* with times, and a Call button. |
 | **Safety** | Guidance by topic (elephants, big cats, buffalo, hippos, camp at night, vehicle breakdown) and Kiswahili phrases. |

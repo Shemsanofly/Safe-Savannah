@@ -10,6 +10,7 @@ let me = null; // { tourist, feed, emergencyLine, smsMode }
 let areas = [];
 let timer = null;
 let failures = 0;
+let lastFeedAt = null;
 let registrationStep = 1;
 const authDraft = { login: {}, register: {} };
 
@@ -62,10 +63,12 @@ async function loadMe() {
       return null;
     }
     me = r;
+    lastFeedAt = Date.now();
     setServerTime(me.serverTime);
     if (me.tourist.language !== lang && !sessionStorageGet('ss-lang-chosen')) setLangSilently(me.tourist.language);
     failures = 0;
     banner.hidden = true;
+    updateFreshness();
     return me;
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
@@ -73,10 +76,11 @@ async function loadMe() {
       return null;
     }
     failures += 1;
-    if (failures >= 2) {
+    if (failures >= 1) {
       banner.hidden = false;
       clear(banner, icon('wifi-off'), el('span', {}, T('offline'), ' ', el('a', { href: `tel:${BOOT.emergencyLine}`, class: 'strong' }, `${T('call')} ${BOOT.emergencyLine}`)));
     }
+    updateFreshness();
     return me;
   }
 }
@@ -121,9 +125,17 @@ function currentRoute() {
   return location.hash.replace(/^#\/?/, '').split('?')[0] || (me ? 'home' : 'welcome');
 }
 function page(title, ...children) {
-  clear(main, el('h1', { class: 'sr-only', tabindex: '-1' }, title), ...children);
+  clear(main, el('h1', { class: 'sr-only', tabindex: '-1' }, title), me ? el('p', { class: 'feed-freshness muted small', 'data-feed-freshness': true }) : null, ...children);
+  updateFreshness();
   document.title = `${title} · Safe Savannah`;
 }
+function updateFreshness() {
+  const stale = !!me && (failures > 0 || !lastFeedAt || Date.now() - lastFeedAt > 45000);
+  main.classList.toggle('is-stale', stale);
+  const label = main.querySelector('[data-feed-freshness]');
+  if (label) label.textContent = `${stale ? `${T('status_stale')} · ` : ''}${T('updated')}: ${lastFeedAt ? new Date(lastFeedAt).toLocaleTimeString(lang === 'sw' ? 'sw-TZ' : 'en-GB') : '—'}`;
+}
+setInterval(updateFreshness, 1000);
 
 async function route() {
   clearInterval(timer);
@@ -385,11 +397,21 @@ function home() {
   const active = feed.alerts.filter((a) => a.active);
   const openSos = feed.sos.find(isOpen);
   page(`${T('hello')}, ${firstName()}`,
+    travellerIntro(),
     openSos ? sosTracker(openSos, { compact: true }) : null,
     el('div', { class: 't-home' },
       el('div', { class: 't-col' }, tripCard(), safetyStatus(active, feed.activeWildlifeIncidents)),
       el('div', { class: 't-col' }, openSos ? null : sosCallout(), quickActions())));
   pollMe(openSos ? 5000 : 15000, home);
+}
+
+function travellerIntro() {
+  const key = `ss-intro-traveller-v1:${me.tourist.id}`;
+  try { if (localStorage.getItem(key)) return null; } catch { /* optional storage */ }
+  const done = el('button', { type: 'button', class: 'btn btn-sm' }, T('intro_done'));
+  const card = el('section', { class: 'onboarding', 'aria-labelledby': 'traveller-intro-title' }, el('div', { class: 'row between' }, el('h2', { id: 'traveller-intro-title' }, T('intro_title')), done), el('p', {}, T('intro_body')));
+  done.addEventListener('click', () => { try { localStorage.setItem(key, '1'); } catch { /* optional storage */ } card.remove(); });
+  return card;
 }
 
 function tripCard() {
@@ -403,7 +425,7 @@ function tripCard() {
       el('li', {}, icon('users', 'icon icon-sm'), T('people', t.group_size))));
 }
 
-/** One clear safety state: a real warning for the tourist, rangers monitoring, or all clear. */
+/** Reported alerts never establish that an area is safe. */
 function safetyStatus(active, monitoring) {
   if (active.length) {
     const sev = active.some((a) => a.level === 'danger') ? 'danger' : 'warning';
@@ -533,7 +555,7 @@ function sosForm() {
         main.querySelector('h1')?.focus({ preventScroll: true });
       } catch (e2) {
         err.hidden = false;
-        clear(err, e2.message, ' ', el('a', { href: `tel:${me.emergencyLine}`, class: 'strong' }, `${T('call')} ${me.emergencyLine}`));
+        clear(err, e2 instanceof ApiError && e2.status > 0 ? e2.message : T('sos_unconfirmed'), ' ', el('a', { href: `tel:${me.emergencyLine}`, class: 'strong' }, `${T('call')} ${me.emergencyLine}`));
       }
     });
   });

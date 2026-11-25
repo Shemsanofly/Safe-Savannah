@@ -113,7 +113,7 @@ describe.skipIf(!available)('operations API (PostgreSQL)', () => {
     );
     await db.query(`INSERT INTO zone_status (camera_id, zone_id, zone_label, state) VALUES ('cam-1', 'guest-path-a', 'Guest path A', 'armed')`);
     const o = (await req('off', 'GET', '/api/overview')).json();
-    expect(o.counts).toEqual({ active: 2, unacknowledged: 1, acknowledged: 1 });
+    expect(o.counts).toEqual({ active: 2, unacknowledged: 1, acknowledged: 1, gatePending: 0 });
     expect(o.cameras[0]).toMatchObject({ feedState: 'reconnecting', reconnectAttempts: 3, detectorKind: 'inference' });
     // Officers get a plain message; supervisors see the raw error.
     expect(o.cameras[0].lastError).toBe('The camera source reported an error.');

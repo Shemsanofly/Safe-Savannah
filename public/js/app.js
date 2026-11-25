@@ -2,14 +2,18 @@
 import { api, BOOT, clear, el, icon, fmtTime, toast } from './lib.js';
 import { FEED } from './status.js';
 import * as store from './store.js';
+import { staffIntro } from './onboarding.js';
 
 const VIEWS = {
   ops: () => import('./views/ops.js'),
+  access: () => import('./views/staffVerification.js'),
+  'access-manual': () => import('./views/access.js'),
   detections: () => import('./views/detections.js'),
   ai: () => import('./views/ai.js'),
   stats: () => import('./views/stats.js'),
   zones: () => import('./views/zones.js'),
   people: () => import('./views/people.js'),
+  staff: () => import('./views/staffAdmin.js'),
   overview: () => import('./views/overview.js'),
   incidents: () => import('./views/incidents.js'),
   incident: () => import('./views/incident.js'),
@@ -29,7 +33,7 @@ export function parseHash() {
   const params = Object.fromEntries(new URLSearchParams(query));
   if (parts[0] === 'incidents' && parts[1]) return { name: 'incident', nav: 'incidents', id: Number(parts[1]), params };
   const name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : 'ops';
-  return { name, nav: name, params };
+  return { name, nav: name === 'access-manual' ? 'staff' : name, params };
 }
 
 export function navigate(hash, { replace = false } = {}) {
@@ -48,6 +52,10 @@ async function route() {
   }
   current?.instance?.destroy?.();
   current = null;
+  if (['staff', 'people', 'stats', 'zones', 'access-manual'].includes(r.name) && BOOT.operator.role !== 'admin') {
+    clear(main, el('div', { class: 'alert alert-error', role: 'alert' }, 'This page requires an admin account. Staff can use Staff gate access to authenticate.'));
+    return;
+  }
   document.querySelectorAll('.nav-link').forEach((a) => {
     if (a.dataset.route === r.nav) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
@@ -62,8 +70,9 @@ async function route() {
   }
   if (seq !== routeSeq) return;
   clear(main);
-  const instance = mod.mount(main, { ...r, navigate, boot: BOOT }) || {};
+  const instance = mod.mount(main, { ...r, navigate, boot: BOOT, touristOnly: r.name === 'people' }) || {};
   current = { name: r.name, instance };
+  if (r.name === 'ops') staffIntro(main);
   if (store.state.overview) instance.update?.(store.state);
   // Move focus to the new screen's heading for keyboard and screen-reader users.
   const h1 = main.querySelector('h1');
@@ -96,6 +105,7 @@ function renderShell(s) {
     if (unacknowledged > 0) pills.push(pill('#/incidents?status=open', 'urgent', 'incident', `${unacknowledged} pending`, { dot: true, pulse: true }));
     else if (active > 0) pills.push(pill('#/incidents?status=active', 'warn', 'incident', `${active} responding`));
     else pills.push(pill('#/incidents', 'ok', 'check-circle', 'No active incidents', { title: 'No incident is open. This does not mean the path is safe.' }));
+    if (BOOT.operator.role === 'admin' && o.counts.gatePending > 0) pills.push(pill('#/staff?pending=1', 'urgent', 'shield', `${o.counts.gatePending} gate review${o.counts.gatePending === 1 ? '' : 's'}`));
     // Camera: only mention it when something is wrong (keeps the bar quiet).
     for (const c of o.cameras) {
       if (c.feedState === 'live') continue;
@@ -103,7 +113,7 @@ function renderShell(s) {
       pills.push(pill('#/overview', f.tone === 'warn' ? 'warn' : 'unknown', f.icon, `Gate camera ${f.label.toLowerCase()} — zone unknown`, { title: f.explain }));
     }
     // When the server cannot be reached, keep the last known status but mark it clearly as out of date.
-    const outdated = !!s.error && s.failures >= 2;
+    const outdated = !!s.error;
     strip.classList.toggle('is-stale', outdated);
     if (outdated) pills.unshift(el('span', { class: 'pill pill-outdated' }, icon('wifi-off'), `Status as of ${fmtTime(new Date(s.lastOkAt).toISOString())}`));
     clear(strip, pills);
@@ -124,7 +134,7 @@ function tickUpdated() {
     updated.textContent = secs < 3 ? 'Updated just now' : `Updated ${secs} s ago`;
     updated.classList.toggle('is-stale', secs > 10);
   }
-  if (s.error && s.failures >= 2) {
+  if (s.error) {
     clear(banner, icon('wifi-off'),
       el('span', {}, s.lastOkAt
         ? `Lost connection to the Safe Savannah server at ${fmtTime(new Date(s.lastOkAt).toISOString())}. What you see may be out of date — use your radio procedure.`

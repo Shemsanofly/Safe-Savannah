@@ -138,9 +138,9 @@ export function mount(main, ctx) {
         el('p', {}, 'Nothing is pending or being responded to. Cameras can miss animals — keep normal patrols and radio checks.')));
       return;
     }
-    clear(queue, list.map((i) => {
+    clear(queue, list.map((i, index) => {
       let actions = null;
-      if (i.status === 'open') {
+      if (i.status === 'open' && index === 0) {
         const respond = el('button', { type: 'button', class: `btn btn-sm ${i.kind === 'sos' || i.risk_level === 'critical' ? 'btn-urgent' : 'btn-primary'}` }, icon('user', 'icon icon-sm'), el('span', {}, "I'm responding"));
         const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
         respond.addEventListener('click', () => runAction(respond, status, async () => {
@@ -150,7 +150,12 @@ export function mount(main, ctx) {
         }, { success: `You are responding to ${i.ref}. Coordinate by radio.` }));
         actions = [respond, status];
       }
-      return incidentItem(i, { areaName: area ? null : data.areas.find((a) => a.id === i.area_id)?.name, actions });
+      const card = incidentItem(i, { areaName: area ? null : data.areas.find((a) => a.id === i.area_id)?.name, actions });
+      if (index === 0) {
+        card.classList.add('is-priority');
+        card.prepend(el('p', { class: 'queue-priority-label' }, i.status === 'open' ? 'Needs attention first' : 'Response in progress'));
+      }
+      return card;
     }));
   }
 

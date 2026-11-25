@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { AppConfig } from '../config.js';
+import { demoNotice } from '../config.js';
 import type { Db } from '../db/pool.js';
 import { eventRef } from '../domain/eventRef.js';
 import { SPECIES } from '../domain/risk.js';
@@ -75,7 +76,7 @@ export async function registerPlatformRoutes(
       signed: true, httpOnly: true, sameSite: 'strict', secure: cfg.COOKIE_SECURE, path: '/', maxAge: 30 * 86_400,
     });
 
-  app.get('/t', async (req, reply) => reply.type('text/html').send(touristPage({ emergencyLine: cfg.EMERGENCY_LINE })));
+  app.get('/t', async (req, reply) => reply.type('text/html').send(touristPage({ emergencyLine: cfg.EMERGENCY_LINE, demoNotice: demoNotice(cfg) })));
   app.get('/api/public/areas', async () => ({ areas: (await listAreas(db)).map((a) => ({ id: a.id, name: a.name, region: a.region })) }));
 
   let failedTouristLogins = 0;
