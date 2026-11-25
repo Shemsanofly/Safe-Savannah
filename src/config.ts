@@ -80,6 +80,8 @@ const EnvSchema = z.object({
   AT_VOICE_NUMBER: z.string().optional(),
   /** Public base URL of the webhook listener (used in voice GetDigits callbacks). */
   PUBLIC_WEBHOOK_URL: z.string().url().optional(),
+  /** Public base URL of the web app, used in lodge check-in QR codes (defaults to the address the page was opened on). */
+  PUBLIC_APP_URL: z.string().url().optional(),
   /** Number shown to tourists as the emergency line. Verify with the park/lodge before use. */
   EMERGENCY_LINE: z.string().default('112'),
   /** Run the scripted camera simulator that produces labelled SIMULATED detections. */

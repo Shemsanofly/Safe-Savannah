@@ -90,19 +90,23 @@ export function loginPage({ error, operatorId = '', demoNotice }: { error: strin
   );
 }
 
-const NAV: { route: string; label: string; short: string; icon: string; admin?: boolean; primary?: boolean }[] = [
-  { route: 'ops', label: 'Live map', short: 'Map', icon: 'map', primary: true },
-  { route: 'access', label: 'Staff gate access', short: 'Gate', icon: 'shield', primary: true },
-  { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident', primary: true },
-  { route: 'detections', label: 'Detections', short: 'Detections', icon: 'paw' },
-  { route: 'ai', label: 'Check a photo', short: 'Photo', icon: 'cpu' },
-  { route: 'overview', label: 'Gate camera', short: 'Camera', icon: 'camera' },
-  { route: 'stats', label: 'Dashboard', short: 'Stats', icon: 'chart', admin: true },
-  { route: 'zones', label: 'Safety zones', short: 'Zones', icon: 'zone', admin: true },
-  { route: 'staff', label: 'Staff management', short: 'Staff', icon: 'users', admin: true },
-  { route: 'people', label: 'Traveller accounts', short: 'Travellers', icon: 'globe', admin: true },
-  { route: 'settings', label: 'Settings', short: 'Settings', icon: 'settings' },
-  { route: 'help', label: 'Guide', short: 'Guide', icon: 'help' },
+type Role = Operator['role'];
+const STAFF: Role[] = ['ranger', 'admin'];
+const NAV: { route: string; label: string; short: string; icon: string; roles: Role[]; primary?: boolean }[] = [
+  { route: 'lodge', label: 'Front desk', short: 'Desk', icon: 'home', roles: ['host'], primary: true },
+  { route: 'ops', label: 'Live map', short: 'Map', icon: 'map', roles: STAFF, primary: true },
+  { route: 'access', label: 'Staff gate access', short: 'Gate', icon: 'shield', roles: STAFF, primary: true },
+  { route: 'incidents', label: 'Incidents', short: 'Incidents', icon: 'incident', roles: STAFF, primary: true },
+  { route: 'detections', label: 'Detections', short: 'Detections', icon: 'paw', roles: STAFF },
+  { route: 'ai', label: 'Check a photo', short: 'Photo', icon: 'cpu', roles: STAFF },
+  { route: 'overview', label: 'Gate camera', short: 'Camera', icon: 'camera', roles: STAFF },
+  { route: 'stats', label: 'Dashboard', short: 'Stats', icon: 'chart', roles: ['admin'] },
+  { route: 'lodges', label: 'Lodges & camps', short: 'Lodges', icon: 'home', roles: ['admin'] },
+  { route: 'zones', label: 'Safety zones', short: 'Zones', icon: 'zone', roles: ['admin'] },
+  { route: 'staff', label: 'Staff management', short: 'Staff', icon: 'users', roles: ['admin'] },
+  { route: 'people', label: 'Traveller accounts', short: 'Travellers', icon: 'globe', roles: ['admin'] },
+  { route: 'settings', label: 'Settings', short: 'Settings', icon: 'settings', roles: STAFF },
+  { route: 'help', label: 'Guide', short: 'Guide', icon: 'help', roles: ['ranger', 'admin', 'host'] },
 ];
 
 export function appPage(opts: {
@@ -119,21 +123,23 @@ export function appPage(opts: {
     staleSeconds: opts.staleSeconds,
     demoNotice: opts.demoNotice,
   }).replace(/</g, '\\u003c');
-  const isAdmin = opts.operator.role === 'admin';
+  const role = opts.operator.role;
+  const isHost = role === 'host';
+  const visible = NAV.filter((n) => n.roles.includes(role));
   const navLinks =
-    NAV.filter((n) => !n.admin || isAdmin)
+    visible
       .map(
-        (n) => `<a href="#/${n.route}" data-route="${n.route}" class="nav-link"${n.primary ? ' data-primary' : ''}>${icon(n.icon)}<span class="nav-label">${n.label}</span><span class="nav-short">${n.short}</span>${
+        (n) => `<a href="#/${n.route}" data-route="${n.route}" class="nav-link"${n.primary || isHost ? ' data-primary' : ''}>${icon(n.icon)}<span class="nav-label">${n.label}</span><span class="nav-short">${n.short}</span>${
           n.route === 'incidents' ? '<span class="nav-badge" data-badge="unack" hidden></span>' : ''
         }</a>`,
       )
-      .join('') + `<button type="button" class="nav-link nav-more" aria-expanded="false" aria-controls="sidenav">${icon('overview')}<span class="nav-short">More</span></button>`;
+      .join('') + (visible.length > 4 ? `<button type="button" class="nav-link nav-more" aria-expanded="false" aria-controls="sidenav">${icon('overview')}<span class="nav-short">More</span></button>` : '');
   return layout(
     'Safe Savannah · Duty operations',
     `<a class="skip-link" href="#main">Skip to main content</a>
 <div class="shell">
   <header class="topbar">
-    <a class="brand" href="#/ops" aria-label="Safe Savannah live map">${icon('logo', 'logo')}<span class="brand-name">Safe Savannah</span></a>
+    <a class="brand" href="${isHost ? '#/lodge' : '#/ops'}" aria-label="Safe Savannah ${isHost ? 'front desk' : 'live map'}">${icon('logo', 'logo')}<span class="brand-name">Safe Savannah</span></a>
     <div class="status-strip" id="status-strip" aria-live="polite" aria-label="System status">
       <span class="pill pill-muted"><span class="spinner" aria-hidden="true"></span>Loading status…</span>
     </div>
@@ -142,8 +148,8 @@ export function appPage(opts: {
       <details class="user-menu">
         <summary aria-label="Account menu for ${esc(opts.operator.name)}"><span class="user-avatar">${icon('user')}<span class="duty-dot" data-duty-dot hidden></span></span><span class="user-name">${esc(opts.operator.name)}</span><span class="duty-chip" data-duty-chip hidden></span>${icon('chevron-down', 'icon icon-sm')}</summary>
         <div class="menu-panel">
-          <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${opts.operator.role === 'admin' ? 'Admin' : 'Ranger'}</span></p>
-          <label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alerts</span></label>
+          <p class="menu-head"><strong>${esc(opts.operator.name)}</strong><span class="muted small">${esc(opts.operator.id)} · ${role === 'admin' ? 'Admin' : isHost ? 'Front desk' : 'Ranger'}</span></p>
+          ${isHost ? '' : '<label class="duty-toggle"><input type="checkbox" id="duty-toggle"> <span>On duty — receive alerts</span></label>'}
           <a class="btn btn-ghost btn-block" href="/t" target="_blank" rel="noopener">${icon('external')}<span>Open tourist app</span></a>
           <form method="post" action="/logout"><button type="submit" class="btn btn-ghost btn-block">${icon('logout')}<span>Sign out</span></button></form>
         </div>

@@ -5,8 +5,9 @@ import { DomainError } from './events.js';
 
 const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, keylen: number) => Promise<Buffer>;
 
-export type Role = 'ranger' | 'admin';
-export const ROLES: readonly Role[] = ['ranger', 'admin'];
+/** ranger: field staff · admin: manages the system · host: lodge front desk (sees only their own lodge). */
+export type Role = 'ranger' | 'admin' | 'host';
+export const ROLES: readonly Role[] = ['ranger', 'admin', 'host'];
 
 export interface Operator {
   id: string;
@@ -26,6 +27,7 @@ export interface OperatorRow extends Operator {
   area_id?: string | null;
   on_duty?: boolean;
   demo?: boolean;
+  lodge_id?: string | null;
 }
 
 export const OPERATOR_ID_RE = /^[a-z0-9_-]{2,32}$/i;
@@ -99,19 +101,20 @@ export async function getSessionOperator(db: Queryable, id: string): Promise<Ses
 }
 
 export async function listOperators(db: Queryable): Promise<OperatorRow[]> {
-  const r = await db.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at, phone, area_id, on_duty, demo FROM operators ORDER BY active DESC, role, name');
+  const r = await db.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at, phone, area_id, on_duty, demo, lodge_id FROM operators ORDER BY active DESC, role, name');
   return r.rows;
 }
 
-export async function createOperator(db: Queryable, op: { id: string; name: string; pin: string; role: Role }): Promise<OperatorRow> {
+export async function createOperator(db: Queryable, op: { id: string; name: string; pin: string; role: Role; lodge_id?: string | null }): Promise<OperatorRow> {
   validateId(op.id);
   validatePin(op.pin);
   const name = validateName(op.name);
+  if (op.role === 'host' && !op.lodge_id) throw new DomainError(400, 'lodge_required', 'Choose the lodge this front-desk account works at');
   const r = await db.query<OperatorRow>(
-    `INSERT INTO operators (id, name, pin_hash, role) VALUES ($1, $2, $3, $4)
+    `INSERT INTO operators (id, name, pin_hash, role, lodge_id) VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (id) DO NOTHING
-     RETURNING id, name, role, active, created_at, updated_at`,
-    [op.id, name, await hashPin(op.pin), op.role],
+     RETURNING id, name, role, active, created_at, updated_at, lodge_id`,
+    [op.id, name, await hashPin(op.pin), op.role, op.role === 'host' ? op.lodge_id : null],
   );
   if (!r.rows[0]) throw new DomainError(409, 'operator_exists', `Operator ID "${op.id}" is already taken`);
   return r.rows[0];
@@ -130,7 +133,7 @@ export async function updateOperator(
   return withTx(db, async (c) => {
     // Serialize admin changes so two concurrent demotions cannot both pass the guard.
     await c.query('SELECT pg_advisory_xact_lock(727275)');
-    const cur = (await c.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at FROM operators WHERE id = $1 FOR UPDATE', [id])).rows[0];
+    const cur = (await c.query<OperatorRow>('SELECT id, name, role, active, created_at, updated_at, lodge_id FROM operators WHERE id = $1 FOR UPDATE', [id])).rows[0];
     if (!cur) throw new DomainError(404, 'not_found', 'Operator not found');
     const next = {
       name: patch.name !== undefined ? validateName(patch.name) : cur.name,
@@ -140,6 +143,7 @@ export async function updateOperator(
     if (id === actorId && (!next.active || next.role !== 'admin')) {
       throw new DomainError(409, 'self_lockout', 'You cannot deactivate or demote your own account');
     }
+    if (next.role === 'host' && !cur.lodge_id) throw new DomainError(400, 'lodge_required', 'Choose a lodge before making this a front-desk account');
     const losingAdmin = cur.role === 'admin' && cur.active && (next.role !== 'admin' || !next.active);
     if (losingAdmin && (await countActiveAdmins(c)) <= 1) {
       throw new DomainError(409, 'last_admin', 'At least one active admin is required');
@@ -168,12 +172,14 @@ export async function setOperatorPin(db: Queryable, id: string, pin: string): Pr
 export async function setOperatorContact(
   db: Queryable,
   id: string,
-  patch: { phone?: string | null; area_id?: string | null; on_duty?: boolean },
+  patch: { phone?: string | null; area_id?: string | null; on_duty?: boolean; lodge_id?: string | null },
 ): Promise<void> {
+  if (patch.lodge_id && !(await db.query('SELECT 1 FROM lodges WHERE id = $1', [patch.lodge_id])).rowCount) throw new DomainError(400, 'unknown_lodge', 'Unknown lodge');
   const r = await db.query(
     `UPDATE operators SET phone = CASE WHEN $2 THEN $3 ELSE phone END, area_id = CASE WHEN $4 THEN $5 ELSE area_id END,
-            on_duty = COALESCE($6, on_duty), updated_at = now() WHERE id = $1`,
-    [id, patch.phone !== undefined, patch.phone ?? null, patch.area_id !== undefined, patch.area_id ?? null, patch.on_duty ?? null],
+            on_duty = COALESCE($6, on_duty), lodge_id = CASE WHEN $7 THEN $8 ELSE lodge_id END, updated_at = now() WHERE id = $1`,
+    [id, patch.phone !== undefined, patch.phone ?? null, patch.area_id !== undefined, patch.area_id ?? null, patch.on_duty ?? null,
+      patch.lodge_id !== undefined, patch.lodge_id ?? null],
   );
   if (!r.rowCount) throw new DomainError(404, 'not_found', 'Operator not found');
 }

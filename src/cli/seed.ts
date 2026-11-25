@@ -15,6 +15,7 @@ import { createPool, type Db } from '../db/pool.js';
 import type { LatLng } from '../domain/geo.js';
 import { assessRisk, speciesProfile } from '../domain/risk.js';
 import { offset } from '../sim/simulator.js';
+import { newCheckinCode } from '../store/hospitality.js';
 import { hashPin } from '../store/operators.js';
 import { listZones } from '../store/platform.js';
 
@@ -69,6 +70,18 @@ const TOURISTS = [
   { name: 'Liam Chen', phone: '+255765000204', lang: 'en', nat: 'Canada', area: 'tarangire-river', lodge: 'Riverside lodge', group: 1 },
   { name: 'Grace Wanjiru', phone: '+255765000205', lang: 'sw', nat: 'Kenya', area: 'ngorongoro-crater', lodge: 'Crater-rim lodge', group: 2 },
   { name: 'Sofia Rossi', phone: '+255765000206', lang: 'en', nat: 'Italy', area: 'ngorongoro-crater', lodge: 'Crater-rim lodge', group: 5 },
+  // More guests at Seronera tented camp, so the front-desk roll call demo looks like a real night at a camp.
+  { name: 'Lucas Martin', phone: '+255765000207', lang: 'en', nat: 'France', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 2 },
+  { name: 'Aisha Mwakyusa', phone: '+255765000208', lang: 'sw', nat: 'Tanzania', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 3 },
+  { name: 'Hannah Becker', phone: '+255765000209', lang: 'en', nat: 'Germany', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 1 },
+  { name: 'Kenji Watanabe', phone: '+255765000210', lang: 'en', nat: 'Japan', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 2 },
+];
+
+/** Partner lodges and camps: each sits on a safety zone and has a front-desk account (PIN 3579). */
+const LODGES = [
+  { id: 'seronera-camp', name: 'Seronera tented camp', area: 'serengeti-seronera', zone: 'Seronera tented camp', phone: '+255765000301', host: 'desk1', hostName: 'Neema (Seronera front desk)' },
+  { id: 'riverside-lodge', name: 'Riverside lodge', area: 'tarangire-river', zone: 'Riverside lodge grounds', phone: '+255765000302', host: 'desk2', hostName: 'Joseph (Riverside front desk)' },
+  { id: 'crater-rim-lodge', name: 'Crater-rim lodge', area: 'ngorongoro-crater', zone: 'Crater-rim lodge', phone: '+255765000303', host: 'desk3', hostName: 'Upendo (Crater-rim front desk)' },
 ];
 
 const SPECIES_MIX: Record<string, string[]> = {
@@ -136,6 +149,22 @@ export async function seed(db: Db, timeZone: string): Promise<string[]> {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'Family contact (demo)',true) ON CONFLICT (phone) DO NOTHING`,
       [t.name, t.phone, touristPin, t.lang, t.nat, t.area, t.lodge, day(-1 - (i % 3)), day(3 + (i % 4)), t.group],
     );
+    // Keep demo trips current when the seed is re-run later, so demo guests are "in house" today.
+    await db.query(`UPDATE tourists SET trip_start = $2, trip_end = $3 WHERE phone = $1 AND demo AND trip_end < current_date`, [t.phone, day(-1 - (i % 3)), day(3 + (i % 4))]);
+  }
+
+  const hostPin = await hashPin('3579');
+  for (const l of LODGES) {
+    await db.query(
+      `INSERT INTO lodges (id, name, area_id, zone_id, phone, checkin_code, demo)
+       VALUES ($1,$2,$3,(SELECT id FROM safety_zones WHERE area_id = $3 AND name = $4 LIMIT 1),$5,$6,true) ON CONFLICT (id) DO NOTHING`,
+      [l.id, l.name, l.area, l.zone, l.phone, newCheckinCode()],
+    );
+    await db.query(`UPDATE tourists SET lodge_id = $1 WHERE lodge_id IS NULL AND lodge = $2 AND area_id = $3`, [l.id, l.name, l.area]);
+    await db.query(
+      `INSERT INTO operators (id, name, pin_hash, role, lodge_id, demo) VALUES ($1,$2,$3,'host',$4,true) ON CONFLICT (id) DO NOTHING`,
+      [l.host, l.hostName, hostPin, l.id],
+    );
   }
 
   const seeded = await db.query(`SELECT 1 FROM app_flags WHERE key = 'demo_history_seeded'`);
@@ -145,6 +174,7 @@ export async function seed(db: Db, timeZone: string): Promise<string[]> {
     log.push(`${n.detections} past detections, ${n.incidents} past incidents, ${n.sos} past SOS`);
   }
   log.push(`${RANGERS.length} demo rangers (PIN 2468), ${TOURISTS.length} demo tourists (PIN 1234)`);
+  log.push(`${LODGES.length} partner lodges with front-desk accounts ${LODGES.map((l) => l.host).join(', ')} (PIN 3579)`);
   return log;
 }
 

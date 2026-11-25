@@ -28,11 +28,12 @@ function emit() {
 
 let timer = null;
 let inflight = null;
+let endpoint = '/api/overview';
 export async function refresh() {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const data = await api.get('/api/overview');
+      const data = await api.get(endpoint);
       setServerTime(data.serverTime);
       state.overview = data;
       state.lastOkAt = Date.now();
@@ -49,7 +50,9 @@ export async function refresh() {
   return inflight;
 }
 
-export function start() {
+/** Start polling. Front-desk accounts poll their lodge's status instead of the park overview. */
+export function start(url = '/api/overview') {
+  endpoint = url;
   refresh();
   clearInterval(timer);
   timer = setInterval(refresh, POLL_MS);

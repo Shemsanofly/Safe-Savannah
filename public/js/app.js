@@ -5,6 +5,8 @@ import * as store from './store.js';
 import { staffIntro } from './onboarding.js';
 
 const VIEWS = {
+  lodge: () => import('./views/lodge.js'),
+  lodges: () => import('./views/lodges.js'),
   ops: () => import('./views/ops.js'),
   access: () => import('./views/staffVerification.js'),
   'access-manual': () => import('./views/access.js'),
@@ -22,6 +24,8 @@ const VIEWS = {
   help: () => import('./views/help.js'),
 };
 
+const IS_HOST = BOOT.operator.role === 'host';
+const HOST_VIEWS = ['lodge', 'help'];
 const main = document.getElementById('main');
 let current = null; // { name, instance }
 let routeSeq = 0;
@@ -31,8 +35,11 @@ export function parseHash() {
   const [pathPart, query = ''] = raw.split('?');
   const parts = pathPart.split('/').filter(Boolean);
   const params = Object.fromEntries(new URLSearchParams(query));
-  if (parts[0] === 'incidents' && parts[1]) return { name: 'incident', nav: 'incidents', id: Number(parts[1]), params };
-  const name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : 'ops';
+  if (parts[0] === 'incidents' && parts[1] && !IS_HOST) return { name: 'incident', nav: 'incidents', id: Number(parts[1]), params };
+  const fallback = IS_HOST ? 'lodge' : 'ops';
+  let name = VIEWS[parts[0]] && parts[0] !== 'incident' ? parts[0] : fallback;
+  // Front-desk accounts only have the front desk and the guide.
+  if (IS_HOST && !HOST_VIEWS.includes(name)) name = 'lodge';
   return { name, nav: name === 'access-manual' ? 'staff' : name, params };
 }
 
@@ -52,7 +59,7 @@ async function route() {
   }
   current?.instance?.destroy?.();
   current = null;
-  if (['staff', 'people', 'stats', 'zones', 'access-manual'].includes(r.name) && BOOT.operator.role !== 'admin') {
+  if (['staff', 'people', 'stats', 'zones', 'lodges', 'access-manual'].includes(r.name) && BOOT.operator.role !== 'admin') {
     clear(main, el('div', { class: 'alert alert-error', role: 'alert' }, 'This page requires an admin account. Staff can use Staff gate access to authenticate.'));
     return;
   }
@@ -95,7 +102,29 @@ function pill(href, tone, iconId, text, opts = {}) {
     opts.dot ? el('span', { class: `dot ${opts.pulse ? 'dot-pulse' : ''}`, 'aria-hidden': 'true' }) : icon(iconId), text);
 }
 
+function renderHostShell(s) {
+  const o = s.overview;
+  if (!o) return;
+  const pills = [];
+  const rc = o.rollCall;
+  if (o.sosOpen) pills.push(pill('#/lodge', 'urgent', 'siren', `${o.sosOpen} guest SOS`, { dot: true, pulse: true }));
+  if (rc?.help) pills.push(pill('#/lodge', 'urgent', 'siren', `${rc.help} guest${rc.help === 1 ? ' needs' : 's need'} help`, { dot: true, pulse: true }));
+  if (rc?.pending) pills.push(pill('#/lodge', 'warn', 'users', `Roll call: ${rc.pending} to answer`));
+  else if (rc) pills.push(pill('#/lodge', 'ok', 'check-circle', 'All guests answered'));
+  if (o.atProperty) pills.push(pill('#/lodge', 'urgent', 'incident', 'Wildlife alert at your lodge', { dot: true, pulse: true }));
+  else if (o.alerts) pills.push(pill('#/lodge', 'warn', 'incident', `${o.alerts} alert${o.alerts === 1 ? '' : 's'} in the area`));
+  if (!pills.length) pills.push(pill('#/lodge', 'ok', 'check-circle', 'No alerts reported near you'));
+  if (s.error) pills.unshift(el('span', { class: 'pill pill-outdated' }, icon('wifi-off'), `Status as of ${fmtTime(new Date(s.lastOkAt).toISOString())}`));
+  strip.classList.toggle('is-stale', !!s.error);
+  clear(strip, pills);
+}
+
 function renderShell(s) {
+  if (IS_HOST) {
+    renderHostShell(s);
+    tickUpdated();
+    return;
+  }
   const o = s.overview;
   if (o) {
     const pills = [];
@@ -217,8 +246,8 @@ if (duty) {
     }
   });
 }
-if (!location.hash) history.replaceState(null, '', '#/ops');
-store.start();
+if (!location.hash) history.replaceState(null, '', IS_HOST ? '#/lodge' : '#/ops');
+store.start(IS_HOST ? '/api/lodge/pulse' : '/api/overview');
 route();
 // Fetch every screen once up front so navigation still works if the server drops out briefly.
 setTimeout(() => Object.values(VIEWS).forEach((load) => load().catch(() => undefined)), 1500);

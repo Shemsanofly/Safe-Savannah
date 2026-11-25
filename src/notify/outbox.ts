@@ -33,7 +33,7 @@ export interface NotificationJobRow {
   message_body: string | null;
   channel: 'sms' | 'voice';
   to_number: string | null;
-  recipient_kind: 'duty' | 'ranger' | 'tourist' | 'admin';
+  recipient_kind: 'duty' | 'ranger' | 'tourist' | 'admin' | 'lodge';
   created_at: Date;
   updated_at: Date;
   accepted_at: Date | null;

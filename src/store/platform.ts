@@ -3,8 +3,10 @@ import { withTx, type Db, type DbClient, type Queryable } from '../db/pool.js';
 import { eventRef } from '../domain/eventRef.js';
 import { haversineM, isValidPolygon, type LatLng } from '../domain/geo.js';
 import { assessRisk, speciesProfile, touristActions, type RiskLevel, type ZoneInput } from '../domain/risk.js';
-import { DomainError, NOTIFY_CHANNEL, type EventRow } from './events.js';
+import { DomainError, type EventRow } from './events.js';
 import { hashPin, verifyPin } from './operators.js';
+import { enqueue, type Job } from './outboxJobs.js';
+import { rollCallsForIncident, touristChecks } from './hospitality.js';
 
 // ============================================================ places
 export interface AreaRow { id: string; name: string; region: string; center_lat: number; center_lng: number; zoom: number }
@@ -100,11 +102,11 @@ export async function upsertCameraStation(db: Queryable, c: z.infer<typeof Camer
 
 // ============================================================ tourists
 export interface TouristRow {
-  id: number; name: string; phone: string; language: 'en' | 'sw'; nationality: string | null; area_id: string; lodge: string | null;
+  id: number; name: string; phone: string; language: 'en' | 'sw'; nationality: string | null; area_id: string; lodge: string | null; lodge_id: string | null;
   trip_start: string; trip_end: string; group_size: number; emergency_contact: string | null; sms_alerts: boolean;
   last_lat: number | null; last_lng: number | null; last_located_at: Date | null; active: boolean; demo: boolean; created_at: Date;
 }
-const TOURIST_COLS = `id, name, phone, language, nationality, area_id, lodge, to_char(trip_start, 'YYYY-MM-DD') AS trip_start,
+const TOURIST_COLS = `id, name, phone, language, nationality, area_id, lodge, lodge_id, to_char(trip_start, 'YYYY-MM-DD') AS trip_start,
   to_char(trip_end, 'YYYY-MM-DD') AS trip_end, group_size, emergency_contact, sms_alerts, last_lat, last_lng, last_located_at, active, demo, created_at`;
 
 /** Accepts +255…, 255…, or 0… (Tanzanian local) and returns E.164. */
@@ -237,19 +239,6 @@ async function rangersForArea(c: Queryable, areaId: string | null, includeDemo: 
 }
 
 // ============================================================ messaging helpers
-interface Job { kind: string; alias: string; to: string; body: string; recipientKind: 'ranger' | 'tourist' | 'admin' | 'duty'; channel?: 'sms' | 'voice' }
-
-async function enqueue(c: DbClient, eventId: number, jobs: Job[]): Promise<void> {
-  for (const j of jobs) {
-    await c.query(
-      `INSERT INTO notification_jobs (event_id, recipient_alias, kind, channel, to_number, recipient_kind, message_body)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (event_id, recipient_alias, kind) DO NOTHING`,
-      [eventId, j.alias, j.kind, j.channel ?? 'sms', j.to, j.recipientKind, j.body],
-    );
-  }
-  if (jobs.length) await c.query('SELECT pg_notify($1, $2)', [NOTIFY_CHANNEL, String(eventId)]);
-}
-
 const LEVEL_RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 export const riskAtLeast = (a: string | null | undefined, b: RiskLevel) => LEVEL_RANK[a ?? 'none']! >= LEVEL_RANK[b]!;
 
@@ -388,6 +377,9 @@ export async function processDetection(db: Db, d: DetectionInput, opts: Messagin
 
     if (created || escalated) {
       await notifyWildlife(c, incident, risk.level, sp, where, zone.name, areaId, source === 'simulated', opts, escalated);
+    } else if (riskAtLeast(incident.risk_level, 'high') && !(await c.query('SELECT 1 FROM guest_checks WHERE event_id = $1', [incident.id])).rowCount) {
+      // A lodge that has not checked on its guests for this incident yet (e.g. it opened before the lodge joined) does so now.
+      await rollCallsForIncident(c, incident, { en: `${sp.name_en} near ${zone.name}`, sw: `${sp.name_sw} karibu na ${zone.name}` }, source === 'simulated', opts);
     }
     return { detectionId, risk, incident, incidentCreated: created, escalated };
   });
@@ -428,7 +420,10 @@ async function notifyWildlife(
         JSON.stringify(actions.en), JSON.stringify(actions.sw), place, e.demo],
     );
     if (riskAtLeast(level, 'high')) {
+      // Lodges whose own zone is at risk ask every guest "Are you safe?"; that SMS replaces the general warning for them.
+      const inRollCall = await rollCallsForIncident(c, e, { en: `${sp.name_en} near ${place}`, sw: `${sp.name_sw} karibu na ${place}` }, simulated, opts);
       for (const t of await touristsForAlert(c, areaId, opts.includeDemoRecipients !== false)) {
+        if (inRollCall.has(t.id)) continue;
         jobs.push({
           kind: `alert${suffix}`, alias: `tourist:${t.id}`, to: t.phone, recipientKind: 'tourist',
           body:
@@ -459,7 +454,7 @@ export interface SosInput {
   description?: string | null;
   lat?: number | null;
   lng?: number | null;
-  channel: 'app' | 'ussd' | 'voice';
+  channel: 'app' | 'ussd' | 'voice' | 'sms';
   areaId?: string | null;
   demo?: boolean;
 }
@@ -592,7 +587,7 @@ export async function listDetections(db: Queryable, f: z.infer<typeof DetectionF
 
 /** Everything a tourist's home screen needs. */
 export async function touristFeed(db: Queryable, t: TouristRow) {
-  const [area, alerts, active, sos] = await Promise.all([
+  const [area, alerts, active, sos, checks] = await Promise.all([
     db.query<AreaRow>('SELECT * FROM areas WHERE id = $1', [t.area_id]),
     db.query(
       `SELECT a.id, a.level, a.title_en, a.title_sw, a.body_en, a.body_sw, a.actions_en, a.actions_sw, a.place, a.created_at, a.expires_at, a.event_id,
@@ -611,6 +606,7 @@ export async function touristFeed(db: Queryable, t: TouristRow) {
         WHERE e.kind = 'sos' AND e.tourist_id = $1 ORDER BY e.opened_at DESC LIMIT 20`,
       [t.id],
     ),
+    touristChecks(db, t.id),
   ]);
   return {
     area: area.rows[0] ?? null,
@@ -620,6 +616,8 @@ export async function touristFeed(db: Queryable, t: TouristRow) {
     })),
     activeWildlifeIncidents: active.rows[0]!.n,
     sos: sos.rows.map((s: { id: number }) => ({ ...s, ref: eventRef(s.id) })),
+    // Open "Are you safe?" requests from the traveller's lodge.
+    checks,
   };
 }
 

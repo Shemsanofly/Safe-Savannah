@@ -41,7 +41,9 @@ import { cameraFeedState, parseDetector } from './cameraState.js';
 import { toCsv } from './csv.js';
 import { appPage, loginPage } from './pages.js';
 import { handleUssd } from './ussd.js';
-import { registerPlatformRoutes, voiceCallbackUrl } from './platformRoutes.js';
+import { handleRollCallSms, hostMayUse } from './hospitalityRoutes.js';
+import { issueAllClear } from '../store/hospitality.js';
+import { messagingOpts, registerPlatformRoutes, voiceCallbackUrl } from './platformRoutes.js';
 import { registerGateRoutes } from './gateRoutes.js';
 import { registerFaceGateRoutes } from './faceGateRoutes.js';
 import type { FaceExtractor } from '../gate/faceRuntime.js';
@@ -171,6 +173,15 @@ async function registerWebhooks(app: FastifyInstance, cfg: AppConfig, db: Db): P
     return reply.type('text/plain').send(text);
   });
 
+  // Incoming SMS (Africa's Talking): guests answer a lodge roll call with SAFE or HELP (Kiswahili SALAMA / MSAADA).
+  app.post('/webhooks/sms-inbound', { preHandler: guard }, async (req, reply) => {
+    const body = z.object({ from: z.string().min(3).max(20), text: z.string().max(500).default('') }).passthrough().safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: 'invalid inbound message' });
+    const result = await handleRollCallSms(db, messagingOpts(cfg), body.data.from, body.data.text);
+    req.log.info({ result }, 'inbound sms');
+    return reply.code(200).send({ ok: true, result });
+  });
+
   // Africa's Talking voice: outbound alert scripts and the inbound emergency keypad menu.
   app.post('/webhooks/voice', { preHandler: guard }, async (req, reply) => {
     const body = z
@@ -248,6 +259,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean;
   app.setErrorHandler((err: Error, req, reply) => {
     if (err instanceof DomainError) return reply.code(err.status).send({ error: err.code, message: err.message });
     if (err instanceof z.ZodError) return reply.code(400).send({ error: 'invalid_request', message: err.issues[0]?.message });
+    if ((err as { code?: string }).code === '23514') return reply.code(400).send({ error: 'not_allowed', message: 'That change is not allowed. A front-desk account must stay linked to a lodge.' });
     const status = (err as { status?: number; statusCode?: number }).status ?? (err as { statusCode?: number }).statusCode;
     if (status && status < 500) return reply.code(status).send({ error: 'request_error', message: err.message });
     req.log.error(err);
@@ -268,6 +280,12 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean;
     const cutoff = op.sessions_valid_after instanceof Date ? op.sessions_valid_after.getTime() : -Infinity;
     if (issuedAt <= cutoff) return; // PIN reset, role change or deactivation since this session began
     req.operator = { id: op.id, name: op.name, role: op.role, active: op.active };
+  });
+  // Front-desk (host) accounts see only their own lodge.
+  app.addHook('preHandler', async (req, reply) => {
+    if (req.operator?.role === 'host' && req.url.startsWith('/api/') && !hostMayUse(req.url)) {
+      return reply.code(403).send({ error: 'forbidden', message: 'Front-desk accounts can only use the front desk screen.' });
+    }
   });
 
   const requireOperator = async (req: FastifyRequest, reply: FastifyReply) => {
@@ -539,6 +557,7 @@ export async function buildApp(cfg: AppConfig, db: Db, opts: { logger?: boolean;
     const body = ActionBody.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_action', message: body.error.issues[0]?.message });
     const result = await addEventAction(db, id, req.operator!.id, body.data);
+    if (!result.duplicate && (body.data.type === 'close' || body.data.type === 'dismiss')) await issueAllClear(db, id, messagingOpts(cfg));
     return { event: { ...result.event, ref: eventRef(result.event.id) }, action: result.action, duplicate: result.duplicate };
   });
 

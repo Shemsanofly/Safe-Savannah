@@ -12,6 +12,34 @@ let timer = null;
 let failures = 0;
 let lastFeedAt = null;
 let registrationStep = 1;
+// A lodge check-in started from the reception QR code (#/checkin?lodge=CODE); survives sign-in or registration.
+let pendingLodge = null; // { code, name, area_id, area_name }
+const hashParams = () => new URLSearchParams(location.hash.split('?')[1] || '');
+function rememberCheckin(code) {
+  try { sessionStorage.setItem('ss-checkin', code); } catch { /* optional */ }
+}
+function storedCheckin() {
+  try { return sessionStorage.getItem('ss-checkin'); } catch { return null; }
+}
+function forgetCheckin() {
+  pendingLodge = null;
+  try { sessionStorage.removeItem('ss-checkin'); } catch { /* optional */ }
+}
+async function loadPendingLodge() {
+  const code = hashParams().get('lodge') || pendingLodge?.code || storedCheckin();
+  if (!code) return null;
+  if (pendingLodge?.code === code.toUpperCase()) return pendingLodge;
+  try {
+    const r = await api.get(`/api/public/lodges/${encodeURIComponent(code)}`);
+    pendingLodge = { code: r.lodge.code, name: r.lodge.name, area_id: r.lodge.area_id, area_name: r.lodge.area_name };
+    rememberCheckin(pendingLodge.code);
+  } catch {
+    forgetCheckin();
+    return { invalid: true };
+  }
+  return pendingLodge;
+}
+const checkinBanner = () => (pendingLodge ? el('div', { class: 't-checkin-banner' }, icon('home'), el('span', {}, T('checkin_banner', pendingLodge.name))) : null);
 const authDraft = { login: {}, register: {} };
 
 const T = (k, ...a) => {
@@ -144,12 +172,15 @@ async function route() {
   // Always fetch fresh data when entering a signed-in screen (status may have changed meanwhile).
   if (needsAuth) await loadMe();
   if (needsAuth && !me) return go('welcome');
-  if (!needsAuth && (r === 'welcome' || r === 'login' || r === 'register') && me) return go('home');
+  if (r === 'checkin') await loadMe();
+  if (['login', 'register', 'checkin'].includes(r) && !pendingLodge?.invalid) await loadPendingLodge();
+  if (!needsAuth && (r === 'welcome' || r === 'login' || r === 'register') && me) return go(pendingLodge ? 'checkin' : 'home');
+  if (r === 'checkin' && !me && pendingLodge && !pendingLodge.invalid) return go('register');
   renderNav();
-  const isAuth = !me && ['welcome', 'login', 'register'].includes(r);
+  const isAuth = !me && ['welcome', 'login', 'register', 'checkin'].includes(r);
   document.body.classList.toggle('t-auth-page', isAuth);
   nav.hidden = isAuth;
-  const views = { welcome, login, register, home, alerts, sos, guide, trip };
+  const views = { welcome, login, register, home, alerts, sos, guide, trip, checkin };
   (views[r] || (me ? home : welcome))();
   main.querySelector('h1')?.focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
@@ -244,6 +275,7 @@ function login() {
   const err = el('div', { id: 't-auth-error', class: 'alert alert-error', role: 'alert', hidden: true });
   const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, el('span', {}, T('sign_in')), icon('chevron-right'));
   const form = el('form', { class: 't-auth-form', novalidate: true },
+    checkinBanner(),
     el('div', { class: 't-auth-heading' }, el('h2', {}, T('welcome_back')), el('p', {}, T('login_intro'))),
     err, field('l-phone', T('phone'), phone, T('login_phone_hint')), field('l-pin', T('pin_login'), pinControl(pin)), btn,
     el('p', { class: 't-privacy-note' }, icon('shield'), T('login_privacy')));
@@ -263,7 +295,7 @@ function login() {
         authDraft.login = {};
         authDraft.register = {};
         await loadMe();
-        go('home');
+        go(pendingLodge && !pendingLodge.invalid ? 'checkin' : 'home');
       } catch (e2) {
         err.hidden = false;
         err.textContent = authError(e2);
@@ -303,8 +335,13 @@ async function register() {
     field('r-name', T('name'), f.name), field('r-phone', T('phone'), f.phone, T('phone_hint')), field('r-pin', T('pin'), pinControl(f.pin), T('pin_hint')));
   const areaError = !areas.length ? el('div', { class: 'alert alert-error', role: 'alert' }, T('err_areas'),
     el('button', { type: 'button', class: 'btn btn-sm', onclick: () => { rememberAuth(); register(); } }, T('retry'))) : null;
+  const lodgeKnown = pendingLodge && !pendingLodge.invalid;
+  if (lodgeKnown) {
+    f.area_id.value = pendingLodge.area_id;
+    f.lodge.value = pendingLodge.name;
+  }
   const tripFields = el('fieldset', { class: 't-auth-fields' }, el('legend', { class: 'sr-only' }, T('your_trip')),
-    areaError, field('r-area', T('destination'), f.area_id), field('r-lodge', T('lodge'), f.lodge),
+    lodgeKnown ? null : areaError, lodgeKnown ? null : field('r-area', T('destination'), f.area_id), lodgeKnown ? null : field('r-lodge', T('lodge'), f.lodge),
     el('div', { class: 't-form-grid' }, field('r-start', T('trip_start'), f.trip_start), field('r-end', T('trip_end'), f.trip_end)),
     field('r-group', T('group'), f.group_size),
     el('details', { class: 't-auth-optional' }, el('summary', {}, icon('plus'), T('optional_details')),
@@ -313,8 +350,10 @@ async function register() {
     el('p', { class: 't-privacy-note' }, icon('shield'), T('consent')));
   const back = el('button', { type: 'button', class: 'btn btn-ghost', onclick: () => { showStep(1); heading.focus(); } }, icon('chevron-left'), T('back'));
   const form = el('form', { class: 't-auth-form', novalidate: true },
+    checkinBanner(),
     el('div', { class: 't-auth-heading' }, heading, intro),
-    steps, err, account, tripFields, el('div', { class: 't-auth-actions' }, back, btn));
+    steps, err, account, tripFields, el('div', { class: 't-auth-actions' }, back, btn),
+    lodgeKnown ? el('p', { class: 't-privacy-note' }, icon('user'), el('a', { href: '#/login' }, T('checkin_signin_hint'))) : null);
   function showStep(step) {
     registrationStep = step;
     account.hidden = step !== 1;
@@ -356,10 +395,13 @@ async function register() {
           name: f.name.value, phone: f.phone.value, pin: f.pin.value, language: lang, area_id: f.area_id.value, lodge: f.lodge.value || null,
           trip_start: f.trip_start.value, trip_end: f.trip_end.value, group_size: Number(f.group_size.value || 1), nationality: f.nationality.value || null,
           emergency_contact: f.emergency_contact.value || null, sms_alerts: f.sms_alerts.checked,
+          lodge_code: lodgeKnown ? pendingLodge.code : undefined,
         });
         authDraft.register = {};
         authDraft.login = {};
         registrationStep = 1;
+        if (lodgeKnown) toast(T('checkin_done', pendingLodge.name));
+        forgetCheckin();
         await loadMe();
         go('home');
       } catch (e2) {
@@ -377,7 +419,7 @@ async function register() {
 }
 
 // ---------------------------------------------------------------- signed-in views
-const LEVEL_ICON = { danger: 'siren', warning: 'alert', advisory: 'info' };
+const LEVEL_ICON = { danger: 'siren', warning: 'alert', advisory: 'info', clear: 'check-circle' };
 const SOS_TYPES = [['medical', 'heart', 't_medical'], ['wildlife', 'paw', 't_wildlife'], ['vehicle', 'car', 't_vehicle'], ['personal', 'shield', 't_personal']];
 const sosDraft = { type: null, details: '', withLoc: true }; // survives background refreshes
 const localized = (a, k) => (lang === 'sw' ? a[`${k}_sw`] : a[`${k}_en`]) || '';
@@ -396,13 +438,95 @@ function home() {
   const feed = me.feed;
   const active = feed.alerts.filter((a) => a.active);
   const openSos = feed.sos.find(isOpen);
+  const check = feed.checks?.[0];
   page(`${T('hello')}, ${firstName()}`,
-    travellerIntro(),
+    check ? rollCallCard(check, home) : travellerIntro(),
     openSos ? sosTracker(openSos, { compact: true }) : null,
     el('div', { class: 't-home' },
-      el('div', { class: 't-col' }, tripCard(), safetyStatus(active, feed.activeWildlifeIncidents)),
+      el('div', { class: 't-col' }, tripCard(), safetyStatus(active, feed.activeWildlifeIncidents, recentClear())),
       el('div', { class: 't-col' }, openSos ? null : sosCallout(), quickActions())));
-  pollMe(openSos ? 5000 : 15000, home);
+  // Refresh often enough that a lodge roll call or warning shows up within seconds.
+  pollMe(openSos || check ? 5000 : 8000, home);
+}
+
+/** "All clear" notices from the last three hours. */
+function recentClear() {
+  return me.feed.alerts.filter((a) => a.level === 'clear' && Date.now() - Date.parse(a.created_at) < 3 * 3_600_000);
+}
+
+/** The lodge's roll call: one tap for "I'm safe" or "I need help". */
+function rollCallCard(check, view) {
+  if (check.status === 'safe') {
+    return el('section', { class: 't-rollcall is-safe', role: 'status' },
+      el('span', { class: 't-rollcall-icon' }, icon('check-circle')),
+      el('div', {}, el('h2', {}, T('rc_thanks')), el('p', {}, T('rc_thanks_sub'))));
+  }
+  if (check.status === 'help') {
+    return el('section', { class: 't-rollcall is-help', role: 'status' },
+      el('span', { class: 't-rollcall-icon' }, icon('siren')),
+      el('div', {}, el('h2', {}, T('rc_help_sent')), el('p', {}, T('status_open_hint'))));
+  }
+  const safe = el('button', { type: 'button', class: 't-rc-btn is-safe' }, icon('check-circle'), el('span', {}, T('rc_safe')));
+  const help = el('button', { type: 'button', class: 't-rc-btn is-help' }, icon('siren'), el('span', {}, T('rc_help')));
+  const err = el('p', { class: 'field-error', role: 'alert', hidden: true });
+  const answer = (btn, status) => busy(btn, async () => {
+    try {
+      const pos = status === 'help' ? await getPosition() : null;
+      await tApi.post(`/api/tourist/checks/${check.id}`, { status, lat: pos?.lat, lng: pos?.lng });
+      toast(status === 'safe' ? T('rc_thanks') : T('rc_help_sent'));
+      await loadMe();
+      view();
+    } catch (e2) {
+      err.hidden = false;
+      clear(err, e2.message, ' ', el('a', { href: `tel:${me.emergencyLine}`, class: 'strong' }, `${T('call')} ${me.emergencyLine}`));
+    }
+  });
+  safe.addEventListener('click', () => answer(safe, 'safe'));
+  help.addEventListener('click', async () => {
+    if (await confirmDialog({ title: T('rc_help_confirm_title'), body: T('rc_help_confirm_body'), confirmLabel: T('rc_help'), tone: 'urgent' })) answer(help, 'help');
+  });
+  return el('section', { class: 't-rollcall is-ask', 'aria-labelledby': 't-rc-title' },
+    el('p', { class: 't-kicker' }, T('rc_kicker', check.lodge_name)),
+    el('h2', { id: 't-rc-title' }, T('rc_title')),
+    el('p', { class: 't-rc-reason' }, icon('alert', 'icon icon-sm'), el('span', {}, check.reason)),
+    el('div', { class: 't-rc-actions' }, safe, help),
+    el('p', { class: 't-rc-note' }, T('rc_body')),
+    err);
+}
+
+/** Opened from the reception QR code: confirm the stay at this lodge. */
+async function checkin() {
+  const lodge = await loadPendingLodge();
+  if (!lodge || lodge.invalid) {
+    page(T('checkin_title'), el('div', { class: 't-auth-solo' }, emptyCard('alert', T('checkin_title'), T('checkin_invalid')),
+      el('a', { class: 'btn btn-block', href: me ? '#/home' : '#/login' }, T(me ? 'nav_home' : 'sign_in'))));
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const leaving = el('input', { id: 'c-end', type: 'date', min: today, value: me.tourist.trip_end >= today ? me.tourist.trip_end : new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10) });
+  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
+  const btn = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, icon('home'), el('span', {}, T('checkin_btn')));
+  const form = el('form', { class: 't-panel t-checkin', novalidate: true },
+    el('span', { class: 't-empty-icon' }, icon('home')),
+    el('h2', {}, T('checkin_at', lodge.name)),
+    el('p', { class: 't-muted' }, `${lodge.area_name}. ${T('checkin_body')}`),
+    err, field('c-end', T('checkin_leaving'), leaving), btn);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    busy(btn, async () => {
+      try {
+        await tApi.post('/api/tourist/checkin', { code: lodge.code, trip_end: leaving.value || undefined });
+        toast(T('checkin_done', lodge.name));
+        forgetCheckin();
+        await loadMe();
+        go('home');
+      } catch (e2) {
+        err.hidden = false;
+        err.textContent = e2.message;
+      }
+    });
+  });
+  page(T('checkin_title'), el('div', { class: 't-auth-solo' }, form));
 }
 
 function travellerIntro() {
@@ -426,7 +550,7 @@ function tripCard() {
 }
 
 /** Reported alerts never establish that an area is safe. */
-function safetyStatus(active, monitoring) {
+function safetyStatus(active, monitoring, clears = []) {
   if (active.length) {
     const sev = active.some((a) => a.level === 'danger') ? 'danger' : 'warning';
     const lead = active.find((a) => a.level === sev) || active[0];
@@ -437,6 +561,13 @@ function safetyStatus(active, monitoring) {
       steps.length ? el('ul', { class: 't-checklist', 'aria-label': T('what_to_do') }, steps.slice(0, 3).map((x) => el('li', {}, icon('check', 'icon icon-sm'), el('span', {}, x)))) : null,
       el('a', { href: '#/alerts', class: 't-safety-link' }, el('span', {}, T('see_all_alerts')),
         active.length > 1 ? el('span', { class: 't-count' }, T('more_alerts', active.length - 1)) : null, icon('chevron-right', 'icon icon-sm')));
+  }
+  if (clears.length) {
+    const c = clears[0];
+    return el('section', { class: 't-safety is-clear is-allclear', role: 'status', 'aria-labelledby': 't-safety-title' },
+      el('div', { class: 't-safety-head' }, el('span', { class: 't-safety-icon' }, icon('check-circle')),
+        el('div', {}, el('p', { class: 't-kicker' }, `${T('clear_kicker')} · ${tAge(c.created_at)}`), el('h2', { id: 't-safety-title' }, localized(c, 'title')),
+          el('p', {}, localized(c, 'body')))));
   }
   const watching = monitoring > 0;
   return el('section', { class: `t-safety ${watching ? 'is-watch' : 'is-clear'}`, role: 'status', 'aria-labelledby': 't-safety-title' },
@@ -476,14 +607,17 @@ function quickActions() {
 
 function alerts() {
   const list = me.feed.alerts;
-  const now = list.filter((a) => a.active);
-  const earlier = list.filter((a) => !a.active);
+  const clears = recentClear();
+  const now = [...clears, ...list.filter((a) => a.active)];
+  const earlier = list.filter((a) => !a.active && !clears.includes(a));
+  const check = me.feed.checks?.[0];
   page(T('alerts_title'),
+    check ? rollCallCard(check, alerts) : null,
     pageHead(T('alerts_title'), T('alerts_sub')),
     list.length ? null : emptyCard('check-circle', T('alerts_empty'), T('no_alerts_body')),
     now.length ? el('section', { class: 't-section' }, el('h3', { class: 't-section-title' }, T('now_section')), el('div', { class: 't-alert-list' }, now.map((a) => alertCard(a)))) : null,
     earlier.length ? el('section', { class: 't-section' }, el('h3', { class: 't-section-title' }, T('earlier_section')), el('div', { class: 't-alert-list' }, earlier.map((a) => alertCard(a, true)))) : null);
-  pollMe(15000, alerts);
+  pollMe(check ? 5000 : 8000, alerts);
 }
 
 function alertCard(a, past = false) {

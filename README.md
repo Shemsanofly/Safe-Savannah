@@ -15,7 +15,8 @@ no CDN). Leaflet is served locally; only map tiles need internet.
 |---|---|---|
 | **Traveller app** `/t` | Tourists (English / Kiswahili) | Two-step sign-up · Home with one clear safety status and what to do · wildlife alerts for their area · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with a live tracker: Received → Ranger responding → Resolved · share location · safety tips and phrases |
 | **Ranger console** `/` | Rangers | **Live map** with a priority list (SOS first, then risk) and one-tap "I'm responding" · incidents with search and filters · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · detections log · **Check a photo** (AI analysis) · on-duty indicator |
-| **Admin** (same console, extra screens) | Administrators | Dashboard · **Safety zones** editor (click to draw) · **People** (rangers, admins and tourist accounts) · Reports + CSV · settings · demo scenarios |
+| **Front desk** `/` (lodge staff) | Lodge and camp reception | Guests staying tonight · wildlife alerts at the property · live **"Are you safe?" roll call** · guest SOS · printable check-in QR code |
+| **Admin** (same console, extra screens) | Administrators | Dashboard · **Lodges & camps** · **Safety zones** editor (click to draw) · **People** (rangers, admins, front desks and tourist accounts) · Reports + CSV · settings · demo scenarios |
 
 Every screen works on phones and computers: see [Screens](#screens).
 
@@ -55,7 +56,8 @@ and zone outlines are illustrative.**
 | Open | Sign in |
 |---|---|
 | http://127.0.0.1:8080 (staff) | ranger `juma` / PIN `2468` (also `neema`, `baraka`, `rehema`, `saning`) · admin: your first operator, or `admin` / `1357` if the seed created one |
-| http://127.0.0.1:8080/t (traveller) | `+255765000201` / PIN `1234` (also `…202`–`…206`; `…203` and `…205` use Kiswahili) |
+| http://127.0.0.1:8080 (front desk) | `desk1` / PIN `3579` (Seronera tented camp; also `desk2` Riverside lodge, `desk3` Crater-rim lodge) |
+| http://127.0.0.1:8080/t (traveller) | `+255765000201` / PIN `1234` (also `…202`–`…210`; `…203`, `…205` and `…208` use Kiswahili). Six demo guests are staying at Seronera tented camp. |
 
 Demo phone numbers are made up. The app **never** sends to demo people through a **live** Africa's Talking
 account; in the sandbox they're useful for the simulator.
@@ -195,11 +197,46 @@ on your account icon, and an **On duty / Off duty** label on computers. Switch i
 To refresh these images after a UI change, run the app with seeded data and capture new ones at the same sizes
 (phone: iPhone 13 viewport; computer: 1366×860).
 
+## Hospitality: lodges, check-in, roll call and all clear
+
+Lodges and camps are partners in the system, not just places on the map. Each one sits on its own safety zone,
+has a front-desk account and a check-in QR code. Four features build on that:
+
+| Feature | What happens |
+|---|---|
+| **Lodges and the front desk** | Admins add a lodge under **Lodges & camps**: name, area, the safety zone it sits on and a front-desk phone. A **Front desk** account (Staff management, role *Front desk*) sees only that lodge: guests staying tonight with tap-to-call, wildlife alerts at the property and in the area, guest SOS, and the roll call. Front-desk accounts cannot open ranger screens or data; the server enforces this. |
+| **Check-in by QR code** | The front desk prints the lodge's QR code. A guest scans it: new guests get the two-step sign-up with the lodge and area already filled in (only dates and group are left); registered guests sign in and confirm their leaving date. Either way they are linked to the lodge for their stay. Admins can replace the code if a printout goes missing. |
+| **"Are you safe?" roll call** | A **high or critical** wildlife alert at a lodge's zone starts a roll call by itself (the front desk can also start one, for example as a drill). Every guest staying tonight gets one SMS, *"Are you safe? Reply SAFE or HELP"* (Kiswahili: *SALAMA* / *MSAADA*), instead of a second warning, and a big **I'm safe / I need help** card in the app. **I need help** opens an SOS for the rangers with the guest's location. The front desk watches answers arrive (safe, needs help, no reply), calls anyone silent and can mark them safe after seeing or speaking to them. The incident log records when the roll call started and when everyone answered. |
+| **All clear** | When a ranger resolves the incident (handled or false alarm), every guest and lodge that was warned or asked gets an **all clear** in their language, by SMS and in the app, and the roll call ends. SOS incidents never send an all clear. |
+
+![Front desk during a roll call](docs/screenshots/front-desk-rollcall-desktop.jpg)
+
+| Check in by QR (phone) | Are you safe? (phone) | All clear (phone) | Front desk (phone) |
+|---|---|---|---|
+| <img src="docs/screenshots/guest-checkin-phone.jpg" width="190" alt="Registering from a lodge QR code"> | <img src="docs/screenshots/guest-are-you-safe-phone.jpg" width="190" alt="Are you safe? card"> | <img src="docs/screenshots/guest-all-clear-phone.jpg" width="190" alt="All clear card"> | <img src="docs/screenshots/front-desk-rollcall-phone.jpg" width="190" alt="Front desk roll call on a phone"> |
+
+**Demo (about two minutes):**
+
+1. Sign in as `desk1` / `3579` on a laptop: the Seronera tented camp front desk, with its QR code and six guests.
+2. On a phone, scan the QR code (or open its **Copy link**) and register a new guest. They land on Home,
+   checked in at the camp.
+3. As an admin, open the **Live map**, expand **Demo scenarios** and run **Lion near tented camp**. Within
+   seconds the phone shows **Are you safe?** and the front desk shows the roll call. The header shows
+   *Wildlife alert at your lodge*.
+4. Answer **I'm safe** on the phone; mark another guest safe from the front desk. Answer **I need help** as
+   another guest (for example `+255765000202` / `1234`): the desk shows *Needs help* and rangers get an SOS.
+5. As ranger `juma` / `2468`, open the lion incident and **Resolve** it. The phone shows **All clear** and
+   the roll call ends with a summary.
+
+SMS replies arrive through Africa's Talking's incoming-message callback (see below). Without a public tunnel
+and `WEBHOOK_TOKEN`, guests answer in the app and the front desk confirms the rest.
+
 ## Africa's Talking
 
 | Channel | What it does | How it runs here |
 |---|---|---|
 | **SMS** | Ranger alerts (risk ≥ medium), tourist warnings in their language (risk ≥ high), SOS confirmations and status updates | Sent through the **Africa's Talking API**. With `AT_ENVIRONMENT=sandbox`, `AT_USERNAME=sandbox` and your sandbox `AT_API_KEY`, messages appear in the [AT simulator](https://simulator.africastalking.com) for the recipient's number. **Without a key, nothing is sent**: the notifier logs a warning and records failed sends in the notification outbox. |
+| **SMS replies** | Guests answer a lodge roll call by replying `SAFE` / `HELP` (or `SALAMA` / `MSAADA`, `1` / `2`) | Set the sandbox **incoming messages** callback to `https://<tunnel>/webhooks/sms-inbound?token=<WEBHOOK_TOKEN>`. Replies from numbers that are not in an open roll call are ignored. |
 | **USSD** | Basic-phone menu: tourists request help (type → park if unregistered → confirm) or check status; ranger phones list alerts and mark "I am responding" | Callback `POST /webhooks/ussd?token=…` needs a public HTTPS tunnel and `USSD_ENABLED=true`. Dial your sandbox channel in the AT simulator. |
 | **Voice** | Calls on-duty rangers for critical wildlife and every SOS; inbound emergency line with a keypad menu | Calls are **simulated and labelled** ("no phone rang") with `VOICE_PROVIDER=simulated`. Live calls require `VOICE_PROVIDER=africastalking` and a provisioned `AT_VOICE_NUMBER`. Callback: `POST /webhooks/voice?token=…`. |
 
@@ -232,7 +269,8 @@ Sandbox set-up:
    `https://<tunnel>/webhooks/ussd?token=<WEBHOOK_TOKEN>`, using the exact token from `.env`.
    Use the dial code assigned by the dashboard in the simulator.
 6. In the sandbox's **SMS** delivery-report settings, set the callback to
-   `https://<tunnel>/webhooks/sms-status?token=<WEBHOOK_TOKEN>`.
+   `https://<tunnel>/webhooks/sms-status?token=<WEBHOOK_TOKEN>`. For roll-call replies, set the
+   **incoming messages** callback to `https://<tunnel>/webhooks/sms-inbound?token=<WEBHOOK_TOKEN>`.
    These URLs contain your private webhook token; share them only with the provider.
 7. Open the [AT simulator](https://simulator.africastalking.com) with a seeded ranger's or tourist's
    number: `+255754000101` (Juma) or `+255765000201` (Emma). Sandbox interactions appear in the
@@ -297,12 +335,13 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 
 ## Security and roles
 
-| | Tourist | Ranger | Admin |
-|---|---|---|---|
-| Own trip, alerts for own area, SOS, status | ✓ | | |
-| Map, incidents, detections, photo check, set own on-duty | | ✓ | ✓ |
-| Respond / resolve / log handoffs | | ✓ | ✓ |
-| Zones, people, tourist accounts, CSV export, scenarios, technical settings | | | ✓ |
+| | Tourist | Front desk | Ranger | Admin |
+|---|---|---|---|---|
+| Own trip, alerts for own area, SOS, status, check in, answer roll calls | ✓ | | | |
+| Own lodge: guests tonight, alerts, guest SOS, roll calls, check-in QR | | ✓ | | ✓ (any lodge) |
+| Map, incidents, detections, photo check, set own on-duty | | | ✓ | ✓ |
+| Respond / resolve / log handoffs | | | ✓ | ✓ |
+| Lodges, zones, people, tourist accounts, CSV export, scenarios, technical settings | | | | ✓ |
 
 - Separate signed, httpOnly, SameSite=strict cookies for staff and tourists.
 - PINs are hashed with scrypt.
@@ -325,7 +364,10 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 | `GET/POST/PATCH /api/zones` | staff read, admin write | Geofences (polygon `[[lat,lng],…]`, kind, sensitivity, occupancy, alert distance) |
 | `GET /api/tourists`, `PATCH /api/tourists/:id`, `POST /api/rangers`, `PATCH /api/rangers/:id/contact` | admin | People management |
 | `GET /api/stats?days=`, `POST /api/sim/scenario`, `POST /api/sim/state` | staff / admin | Statistics, demo scenarios, pause simulator |
-| `POST /webhooks/sms-status`, `/webhooks/ussd`, `/webhooks/voice` | provider (token) | Africa's Talking callbacks |
+| `GET /api/public/lodges/:code`, `POST /api/tourist/checkin`, `POST /api/tourist/checks/:id` | public / tourist | Look up a check-in code, check in, answer a roll call (`safe` \| `help`; help opens an SOS) |
+| `GET /api/lodge`, `/api/lodge/pulse`, `/api/lodge/qr.svg`, `POST /api/lodge/checks`, `…/checks/:id/responses/:touristId`, `…/checks/:id/close` | front desk, admin (`?lodge=`) | Front-desk view, header status, check-in QR, start / confirm safe / end a roll call |
+| `GET/POST/PATCH /api/lodges`, `POST /api/lodges/:id/code` | admin | Lodges and new check-in codes |
+| `POST /webhooks/sms-status`, `/webhooks/sms-inbound`, `/webhooks/ussd`, `/webhooks/voice` | provider (token) | Africa's Talking callbacks (delivery reports, roll-call replies, USSD, voice) |
 
 ## Tests
 
