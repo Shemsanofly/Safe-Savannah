@@ -1,5 +1,17 @@
-// English / Kiswahili strings for the traveller app.
+// Traveller app strings. English and Kiswahili live here; other languages are in ./locales/.
+import * as fr from './locales/fr.js';
+import * as de from './locales/de.js';
+import * as it from './locales/it.js';
+import * as es from './locales/es.js';
+import * as zh from './locales/zh.js';
+
+/** Guest languages, each named in its own language (shown in the language picker). */
+export const LANGUAGES = [['en', 'English'], ['sw', 'Kiswahili'], ['fr', 'Français'], ['de', 'Deutsch'], ['it', 'Italiano'], ['es', 'Español'], ['zh', '中文']];
+const MORE = { fr, de, it, es, zh };
 // Kiswahili translations should be reviewed by a native speaker before production use.
+/** Locale used for dates and times in each language. */
+export const LOCALE = { en: 'en-GB', sw: 'sw-TZ', fr: 'fr-FR', de: 'de-DE', it: 'it-IT', es: 'es-ES', zh: 'zh-CN' };
+
 export const STRINGS = {
   en: {
     traveller_companion: 'Your safari companion', auth_headline: 'Explore the wild.', auth_headline_accent: 'Stay connected.',
@@ -7,7 +19,7 @@ export const STRINGS = {
     auth_caption: 'Made for your journey through Tanzania',
     feature_alerts: 'Know what is happening', feature_alerts_body: 'Wildlife alerts for your registered safari area.',
     feature_help: 'Reach out when you need help', feature_help_body: 'Send an SOS and follow your ranger’s response.',
-    feature_guide: 'Travel a little wiser', feature_guide_body: 'Practical guidance in English and Kiswahili.',
+    feature_guide: 'Travel a little wiser', feature_guide_body: 'Practical safety guidance in your language.',
     account_options: 'Traveller account options', create_account: 'Create account', welcome_back: 'Welcome back',
     login_intro: 'Sign in to see alerts for your trip and get help fast.', login_phone_hint: 'The number you registered with, including country code.',
     enter_pin: 'Enter your PIN', login_privacy: 'Only park rangers see your trip details.',
@@ -26,7 +38,7 @@ export const STRINGS = {
     err_areas: 'Destinations couldn’t be loaded. Please try again before registering.',
     nav_home: 'Home', nav_alerts: 'Alerts', nav_sos: 'SOS', nav_guide: 'Safety', nav_trip: 'My trip', nav_welcome: 'Welcome',
     welcome_title: 'Travel safely in the wild',
-    welcome_body: 'Get wildlife alerts for your safari area, ask rangers for help with one tap, and read safety guidance in English or Kiswahili.',
+    welcome_body: 'Get wildlife alerts for your safari area, ask rangers for help with one tap, and read safety guidance in your language.',
     sign_in: 'Sign in', register: 'Register my trip', have_account: 'Already registered?', new_here: 'New here?',
     phone: 'Mobile phone number', phone_hint: 'Include the country code. Rangers call it in an emergency.',
     pin: 'Choose a PIN', pin_login: 'PIN', pin_hint: 'You will use it to sign in.',
@@ -68,6 +80,25 @@ export const STRINGS = {
     rc_help_sent: 'Rangers have been alerted. Help is on the way.',
     rc_help_confirm_title: 'Ask for help now?', rc_help_confirm_body: 'Rangers and the front desk are alerted straight away. Stay somewhere safe.',
     level_clear: 'All clear', clear_kicker: 'All clear',
+    escort_title: 'Night escort', escort_sub: 'After dark, a staff member walks you between your room and the lodge.',
+    escort_short: 'Night escort', escort_qa_sub: 'Walk with lodge staff after dark',
+    escort_from: 'Where are you?', escort_from_ph: 'e.g. Tent 7', escort_to: 'Where to?',
+    to_dining: 'Restaurant', to_reception: 'Reception', to_bar: 'Bar / fire pit', to_room: 'My tent or room', to_other: 'Somewhere else',
+    escort_to_other: 'Where exactly?', escort_people: 'How many people?', escort_note: 'Anything else? (optional)',
+    escort_send: 'Ask for an escort', escort_sent: 'Request sent to the front desk.',
+    escort_waiting: 'Waiting for the front desk', escort_waiting_sub: 'Stay inside. Someone will come to you.',
+    escort_coming: (n) => `${n} is on the way`, escort_coming_sub: 'Wait inside until they knock or call.',
+    escort_done: 'Escort completed', escort_cancel: 'Cancel request', escort_need_lodge: 'Escorts are arranged by your lodge. Check in with the QR code at reception first.',
+    out_title: 'Going out', out_sub: 'Tell your lodge and the rangers where you are going. If wildlife is reported there, they know you are out.',
+    out_short: 'Going out', out_qa_sub: 'Check in a walk, drive or picnic',
+    out_what: 'What are you doing?', act_game_drive: 'Game drive', act_walking_safari: 'Walking safari', act_picnic: 'Picnic', act_sundowner: 'Sundowner', act_other: 'Something else',
+    out_where: 'Where?', out_when: 'Starting', out_now: 'Now', out_later: 'Later', out_back: 'Back by', out_people: 'People with you',
+    out_send: 'Check in', out_sent: 'Checked in. Have a good time and stay with your guide.',
+    out_active: (p) => `You are out: ${p}`, out_planned: (p) => `Planned: ${p}`, out_until: (t) => `Back by ${t}`,
+    out_overdue: 'You are past your return time', out_overdue_sub: 'Tap “I’m back”, or call the lodge if you are delayed.',
+    out_im_back: 'I’m back', out_cancel: 'Cancel', out_back_thanks: 'Welcome back!', out_no_places: 'No outing places are set up for your area yet.',
+    err_back_time: 'Choose a return time after the start.',
+    age_now: 'just now', age_min: (n) => `${n} min ago`, age_hours: (n) => `${n} h ago`, language_label: 'Language',
     status_clear: 'No active alerts reported', status_monitoring: 'Rangers are watching wildlife nearby',
     status_monitoring_body: 'There is no warning for you right now. Stay alert and follow your guide.',
     status_warning: 'Wildlife warning near you', status_danger: 'Danger near you',
@@ -93,7 +124,7 @@ export const STRINGS = {
     auth_caption: 'Kwa safari yako katika Tanzania',
     feature_alerts: 'Jua kinachoendelea', feature_alerts_body: 'Tahadhari za wanyamapori katika eneo la safari yako.',
     feature_help: 'Omba msaada unapouhitaji', feature_help_body: 'Tuma SOS na fuatilia majibu ya askari.',
-    feature_guide: 'Safiri ukiwa na maarifa', feature_guide_body: 'Mwongozo wa vitendo kwa Kiswahili na Kiingereza.',
+    feature_guide: 'Safiri ukiwa na maarifa', feature_guide_body: 'Mwongozo wa usalama kwa lugha yako.',
     account_options: 'Chaguo za akaunti ya msafiri', create_account: 'Fungua akaunti', welcome_back: 'Karibu tena',
     login_intro: 'Ingia uone tahadhari za safari yako na upate msaada haraka.', login_phone_hint: 'Namba uliyojisajili nayo, pamoja na msimbo wa nchi.',
     enter_pin: 'Weka PIN yako', login_privacy: 'Askari wa hifadhi pekee wanaona taarifa za safari yako.',
@@ -112,7 +143,7 @@ export const STRINGS = {
     err_areas: 'Imeshindikana kupakia maeneo. Tafadhali jaribu tena kabla ya kujisajili.',
     nav_home: 'Mwanzo', nav_alerts: 'Tahadhari', nav_sos: 'SOS', nav_guide: 'Usalama', nav_trip: 'Safari yangu', nav_welcome: 'Karibu',
     welcome_title: 'Safiri salama porini',
-    welcome_body: 'Pata tahadhari za wanyamapori kwa eneo lako la safari, omba msaada wa askari kwa kubofya mara moja, na usome ushauri wa usalama kwa Kiswahili au Kiingereza.',
+    welcome_body: 'Pata tahadhari za wanyamapori kwa eneo lako la safari, omba msaada wa askari kwa kubofya mara moja, na usome ushauri wa usalama kwa lugha yako.',
     sign_in: 'Ingia', register: 'Sajili safari yangu', have_account: 'Umeshajisajili?', new_here: 'Mgeni hapa?',
     phone: 'Namba ya simu', phone_hint: 'Weka msimbo wa nchi. Askari wataipiga wakati wa dharura.',
     pin: 'Chagua PIN', pin_login: 'PIN', pin_hint: 'Utaitumia kuingia.',
@@ -154,6 +185,25 @@ export const STRINGS = {
     rc_help_sent: 'Askari wamejulishwa. Msaada unakuja.',
     rc_help_confirm_title: 'Omba msaada sasa?', rc_help_confirm_body: 'Askari na mapokezi watajulishwa mara moja. Kaa mahali salama.',
     level_clear: 'Hali ni shwari', clear_kicker: 'Hali ni shwari',
+    escort_title: 'Msindikizaji wa usiku', escort_sub: 'Usiku, mfanyakazi atatembea nawe kati ya chumba chako na hoteli.',
+    escort_short: 'Msindikizaji', escort_qa_sub: 'Tembea na mfanyakazi usiku',
+    escort_from: 'Uko wapi?', escort_from_ph: 'mfano: Hema namba 7', escort_to: 'Unaenda wapi?',
+    to_dining: 'Mgahawa', to_reception: 'Mapokezi', to_bar: 'Baa / moto wa kambi', to_room: 'Hema au chumba changu', to_other: 'Mahali pengine',
+    escort_to_other: 'Wapi hasa?', escort_people: 'Watu wangapi?', escort_note: 'Kuna jingine? (si lazima)',
+    escort_send: 'Omba msindikizaji', escort_sent: 'Ombi limetumwa mapokezi.',
+    escort_waiting: 'Inasubiri mapokezi', escort_waiting_sub: 'Baki ndani. Mtu atakuja kwako.',
+    escort_coming: (n) => `${n} yuko njiani`, escort_coming_sub: 'Subiri ndani hadi agonge au akupigie.',
+    escort_done: 'Usindikizaji umekamilika', escort_cancel: 'Ghairi ombi', escort_need_lodge: 'Msindikizaji hupangwa na hoteli yako. Kwanza jisajili kwa QR iliyo mapokezi.',
+    out_title: 'Natoka', out_sub: 'Iambie hoteli na askari unakoenda. Mnyama akionekana huko, watajua uko nje.',
+    out_short: 'Natoka', out_qa_sub: 'Sajili matembezi, safari au pikiniki',
+    out_what: 'Unafanya nini?', act_game_drive: 'Safari ya gari', act_walking_safari: 'Safari ya miguu', act_picnic: 'Pikiniki', act_sundowner: 'Machweo', act_other: 'Jambo jingine',
+    out_where: 'Wapi?', out_when: 'Unaanza', out_now: 'Sasa', out_later: 'Baadaye', out_back: 'Utarudi saa', out_people: 'Watu ulio nao',
+    out_send: 'Sajili', out_sent: 'Umesajiliwa. Furahia na baki na kiongozi wako.',
+    out_active: (p) => `Uko nje: ${p}`, out_planned: (p) => `Umepanga: ${p}`, out_until: (t) => `Utarudi kabla ya ${t}`,
+    out_overdue: 'Umepita muda wa kurudi', out_overdue_sub: 'Bonyeza “Nimerudi”, au piga simu hoteli ukichelewa.',
+    out_im_back: 'Nimerudi', out_cancel: 'Ghairi', out_back_thanks: 'Karibu tena!', out_no_places: 'Bado hakuna maeneo ya matembezi kwa eneo lako.',
+    err_back_time: 'Chagua muda wa kurudi baada ya kuanza.',
+    age_now: 'sasa hivi', age_min: (n) => `dakika ${n} zilizopita`, age_hours: (n) => `saa ${n} zilizopita`, language_label: 'Lugha',
     status_clear: 'Hakuna tahadhari inayoendelea iliyoripotiwa', status_monitoring: 'Askari wanafuatilia wanyamapori karibu',
     status_monitoring_body: 'Hakuna onyo kwako kwa sasa. Kuwa makini na fuata maelekezo ya kiongozi wako.',
     status_warning: 'Onyo la wanyamapori karibu nawe', status_danger: 'Hatari karibu nawe',
@@ -201,3 +251,14 @@ export const GUIDE = {
 export const PHRASES = [
   ['Help!', 'Msaada!'], ['Danger', 'Hatari'], ['Call a ranger', 'Mwite askari'], ['Someone is hurt', 'Kuna mtu ameumia'], ['Our car has broken down', 'Gari letu limeharibika'], ['Where is the doctor?', 'Daktari yuko wapi?'],
 ];
+
+// Other languages: strings fall back to English key by key; the guide and phrase meanings fall back as a whole.
+for (const [code, mod] of Object.entries(MORE)) {
+  STRINGS[code] = mod.strings || {};
+  if (mod.guide) GUIDE[code] = mod.guide;
+}
+/** Meaning of each Kiswahili phrase in the guest's language (same order as PHRASES). */
+export const PHRASE_MEANINGS = {
+  en: PHRASES.map(([meaning]) => meaning),
+  ...Object.fromEntries(Object.entries(MORE).filter(([, m]) => m.phrases).map(([code, m]) => [code, m.phrases])),
+};

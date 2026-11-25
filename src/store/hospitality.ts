@@ -6,6 +6,7 @@ import { withTx, type Db, type DbClient, type Queryable } from '../db/pool.js';
 import { eventRef } from '../domain/eventRef.js';
 import { DomainError } from './events.js';
 import { enqueue, type Job } from './outboxJobs.js';
+import { allClearContent, catalog, LANGS, rollCallReasons, safetyCheckReasons, type Lang } from '../domain/i18n.js';
 
 export interface LodgeRow {
   id: string; name: string; area_id: string; zone_id: number | null; phone: string | null; checkin_code: string;
@@ -105,7 +106,7 @@ export async function checkInTourist(db: Queryable, touristId: number, lodge: Lo
   );
 }
 
-export interface GuestRow { id: number; name: string; phone: string; language: 'en' | 'sw'; group_size: number; trip_end: string; sms_alerts: boolean; demo: boolean }
+export interface GuestRow { id: number; name: string; phone: string; language: string; group_size: number; trip_end: string; sms_alerts: boolean; demo: boolean }
 export async function inHouseGuests(db: Queryable, lodgeId: string): Promise<GuestRow[]> {
   return (
     await db.query<GuestRow>(
@@ -122,11 +123,13 @@ export interface CheckRow {
   completed_at: Date | null; closed_at: Date | null; closed_reason: string | null; demo: boolean;
 }
 
-function rollCallSms(lang: 'en' | 'sw', reason: { en: string; sw: string }, lodgeName: string, opts: MsgOpts, test: boolean): string {
-  const tag = opts.testMode || test ? ' TEST' : '';
-  return lang === 'sw'
-    ? `Safe Savannah${tag}: ${reason.sw}. ${lodgeName} inawahesabu wageni. Uko salama? Jibu SALAMA au MSAADA. Baki ndani. Dharura: ${opts.emergencyLine}`
-    : `Safe Savannah${tag}: ${reason.en}. ${lodgeName} is checking on every guest. Are you safe? Reply SAFE or HELP. Stay inside. Emergency: ${opts.emergencyLine}`;
+/** Roll-call reason in every guest language (English is also what staff see). */
+export type Reasons = Record<Lang, string>;
+const sameInEveryLanguage = (text: string): Reasons => Object.fromEntries(LANGS.map((l) => [l, text])) as Reasons;
+
+function rollCallSms(lang: string, reasons: Reasons, lodgeName: string, opts: MsgOpts, test: boolean): string {
+  const c = catalog(lang);
+  return c.rollCallSms({ tag: opts.testMode || test ? ' TEST' : '', reason: reasons[lang as Lang] ?? reasons.en, lodge: lodgeName, line: opts.emergencyLine });
 }
 
 /**
@@ -136,7 +139,7 @@ function rollCallSms(lang: 'en' | 'sw', reason: { en: string; sw: string }, lodg
  */
 export async function startRollCall(
   c: DbClient,
-  args: { lodge: LodgeRow; eventId: number | null; reason: { en: string; sw: string }; startedBy: string; simulated?: boolean; demo?: boolean },
+  args: { lodge: LodgeRow; eventId: number | null; reason: Reasons; startedBy: string; simulated?: boolean; demo?: boolean },
   opts: MsgOpts,
 ): Promise<{ check: CheckRow; created: boolean; smsTo: Set<number> }> {
   const { lodge } = args;
@@ -149,8 +152,8 @@ export async function startRollCall(
   }
   const check = (
     await c.query<CheckRow>(
-      `INSERT INTO guest_checks (lodge_id, event_id, reason, started_by, demo) VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [lodge.id, args.eventId, args.reason.en, args.startedBy, !!args.demo || lodge.demo],
+      `INSERT INTO guest_checks (lodge_id, event_id, reason, reason_i18n, started_by, demo) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [lodge.id, args.eventId, args.reason.en, JSON.stringify(args.reason), args.startedBy, !!args.demo || lodge.demo],
     )
   ).rows[0]!;
   const guests = await inHouseGuests(c, lodge.id);
@@ -180,10 +183,12 @@ export async function startRollCall(
 }
 
 /** Wildlife risk at a lodge's own safety zone (high or critical) starts that lodge's roll call automatically. */
+export { rollCallReasons };
+
 export async function rollCallsForIncident(
   c: DbClient,
   e: { id: number; safety_zone_id: number | null; demo: boolean },
-  reason: { en: string; sw: string },
+  reason: Reasons,
   simulated: boolean,
   opts: MsgOpts,
 ): Promise<Set<number>> {
@@ -199,11 +204,12 @@ export async function rollCallsForIncident(
 
 export async function startManualRollCall(db: Db, lodge: LodgeRow, operatorId: string, eventId: number | null, opts: MsgOpts) {
   return withTx(db, async (c) => {
-    let reason = { en: `Safety check at ${lodge.name}`, sw: `Ukaguzi wa usalama ${lodge.name}` };
+    let reason: Reasons = safetyCheckReasons(lodge.name);
     if (eventId) {
       const e = (await c.query<{ title: string | null; area_id: string | null; source: string }>('SELECT title, area_id, source FROM events WHERE id = $1', [eventId])).rows[0];
       if (!e || e.area_id !== lodge.area_id) throw new DomainError(400, 'unknown_incident', 'Choose an incident in this lodge’s area');
-      reason = { en: `${e.title ?? 'Wildlife alert'}`, sw: `Tahadhari: ${e.title ?? 'wanyamapori'}` };
+      // Incident titles are in English; the guest app adds the translated "Are you safe?" around it.
+      reason = sameInEveryLanguage(e.title ?? 'Wildlife alert');
       return startRollCall(c, { lodge, eventId, reason, startedBy: operatorId, simulated: e.source !== 'inference' }, opts);
     }
     return startRollCall(c, { lodge, eventId: null, reason, startedBy: operatorId }, opts);
@@ -254,8 +260,8 @@ export async function closeRollCall(db: Queryable, checkId: number, lodgeId: str
 /** The traveller's open roll calls (shown as "Are you safe?" in the app). */
 export async function touristChecks(db: Queryable, touristId: number) {
   return (
-    await db.query<{ id: number; lodge_name: string; reason: string; started_at: Date; status: string; event_id: number | null; sos_event_id: number | null }>(
-      `SELECT g.id, l.name AS lodge_name, g.reason, g.started_at, r.status, g.event_id, r.sos_event_id
+    await db.query<{ id: number; lodge_name: string; reason: string; reason_i18n: Reasons | null; started_at: Date; status: string; event_id: number | null; sos_event_id: number | null }>(
+      `SELECT g.id, l.name AS lodge_name, g.reason, g.reason_i18n, g.started_at, r.status, g.event_id, r.sos_event_id
          FROM guest_check_responses r JOIN guest_checks g ON g.id = r.check_id JOIN lodges l ON l.id = g.lodge_id
         WHERE r.tourist_id = $1 AND g.closed_at IS NULL ORDER BY g.started_at DESC`,
       [touristId],
@@ -266,7 +272,7 @@ export async function touristChecks(db: Queryable, touristId: number) {
 /** Latest open roll call a phone number belongs to (for SMS replies). */
 export async function openCheckForPhone(db: Queryable, phone: string) {
   return (
-    await db.query<{ check_id: number; tourist_id: number; event_id: number | null; lodge_name: string; language: 'en' | 'sw' }>(
+    await db.query<{ check_id: number; tourist_id: number; event_id: number | null; lodge_name: string; language: string }>(
       `SELECT g.id AS check_id, t.id AS tourist_id, g.event_id, l.name AS lodge_name, t.language
          FROM tourists t JOIN guest_check_responses r ON r.tourist_id = t.id JOIN guest_checks g ON g.id = r.check_id JOIN lodges l ON l.id = g.lodge_id
         WHERE t.phone = $1 AND t.active AND g.closed_at IS NULL ORDER BY g.started_at DESC LIMIT 1`,
@@ -285,8 +291,8 @@ export async function lodgeConsole(db: Queryable, lodgeId: string) {
       `SELECT * FROM guest_checks WHERE lodge_id = $1 AND (closed_at IS NULL OR closed_at > now() - interval '3 hours') ORDER BY closed_at IS NULL DESC, started_at DESC LIMIT 1`,
       [lodgeId],
     ),
-    db.query<{ id: number; kind: string; status: string; risk_level: string | null; title: string | null; zone_label: string | null; opened_at: Date; source: string; demo: boolean; at_property: boolean; responder: string | null }>(
-      `SELECT e.id, e.kind, e.status, e.risk_level, e.title, e.zone_label, e.opened_at, e.source, e.demo, COALESCE(e.safety_zone_id = $2, false) AS at_property,
+    db.query<{ id: number; kind: string; status: string; risk_level: string | null; title: string | null; zone_label: string | null; opened_at: Date; source: string; demo: boolean; at_property: boolean; responder: string | null; safety_zone_id: number | null }>(
+      `SELECT e.id, e.kind, e.status, e.risk_level, e.title, e.zone_label, e.opened_at, e.source, e.demo, COALESCE(e.safety_zone_id = $2, false) AS at_property, e.safety_zone_id,
               o.name AS responder
          FROM events e LEFT JOIN operators o ON o.id = e.acknowledged_by
         WHERE e.area_id = $1 AND e.kind IN ('wildlife', 'zone_alert') AND e.status IN ('open', 'acknowledged')
@@ -362,17 +368,11 @@ export async function issueAllClear(db: Db, eventId: number, opts: MsgOpts): Pro
     const place = warned.place ?? e.zone_label ?? 'the area';
     const falseAlarm = e.status === 'false_alert';
     const simulated = e.source !== 'inference';
+    const content = allClearContent(place, simulated, falseAlarm);
     await c.query(
-      `INSERT INTO tourist_alerts (area_id, event_id, level, title_en, title_sw, body_en, body_sw, place, expires_at, demo)
-       VALUES ($1,$2,'clear',$3,$4,$5,$6,$7, now() + interval '6 hours', $8)`,
-      [e.area_id, eventId, `All clear near ${place}${simulated ? ' (simulated test)' : ''}`, `Hali ni shwari karibu na ${place}${simulated ? ' (jaribio)' : ''}`,
-        falseAlarm
-          ? 'Rangers checked and it was a false alarm. You can carry on with your plans. Keep following your guide.'
-          : 'Rangers have checked the area. You can carry on with your plans. Keep following your guide and stay alert.',
-        falseAlarm
-          ? 'Askari wamekagua na haikuwa hatari. Unaweza kuendelea na mipango yako. Endelea kufuata maelekezo ya kiongozi wako.'
-          : 'Askari wamekagua eneo. Unaweza kuendelea na mipango yako. Endelea kufuata maelekezo ya kiongozi wako na kuwa makini.',
-        place, e.demo],
+      `INSERT INTO tourist_alerts (area_id, event_id, level, title_en, title_sw, body_en, body_sw, content, place, expires_at, demo)
+       VALUES ($1,$2,'clear',$3,$4,$5,$6,$7,$8, now() + interval '6 hours', $9)`,
+      [e.area_id, eventId, content.en.title, content.sw.title, content.en.body, content.sw.body, JSON.stringify(content), place, e.demo],
     );
     // SMS everyone who was messaged about this incident (warnings and roll calls).
     const recipients = (
@@ -391,11 +391,9 @@ export async function issueAllClear(db: Db, eventId: number, opts: MsgOpts): Pro
     const tag = opts.testMode || simulated ? ' TEST' : '';
     const jobs: Job[] = recipients.map((r) => ({
       kind: 'all_clear', alias: r.recipient_alias, to: r.to_number, recipientKind: r.recipient_kind as Job['recipientKind'],
-      body: langs.get(r.recipient_alias) === 'sw'
-        ? `Safe Savannah${tag}: Hali ni shwari karibu na ${place}. Askari wamekagua. Endelea kufuata maelekezo ya kiongozi wako.`
-        : r.recipient_kind === 'lodge'
-          ? `Safe Savannah${tag}: All clear near ${place} (${eventRef(eventId)}). Rangers have resolved the incident. Guests have been told.`
-          : `Safe Savannah${tag}: All clear near ${place}. Rangers have checked the area. Keep following your guide.`,
+      body: r.recipient_kind === 'lodge'
+        ? `Safe Savannah${tag}: All clear near ${place} (${eventRef(eventId)}). Rangers have resolved the incident. Guests have been told.`
+        : catalog(langs.get(r.recipient_alias)).allClearSms({ tag, place }),
     }));
     await enqueue(c, eventId, jobs);
     await c.query(`INSERT INTO event_actions (event_id, actor, action, note) VALUES ($1, 'system:lodge', 'note', $2)`, [

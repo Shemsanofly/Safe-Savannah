@@ -1,6 +1,6 @@
 // Front desk: a lodge's guests, wildlife alerts at the property, the "Are you safe?" roll call and the check-in QR.
-import { age, api, BOOT, clear, confirmDialog, el, fmtDateTime, fmtTime, icon, initials, qs, runAction } from '../lib.js';
-import { EMERGENCY, RISK } from '../status.js';
+import { age, api, BOOT, clear, confirmDialog, el, fmtDateTime, fmtTime, icon, initials, qs, runAction, toast } from '../lib.js';
+import { EMERGENCY, languageName, RISK } from '../status.js';
 
 const STATUS = {
   help: { label: 'Needs help', tone: 'urgent', icon: 'siren' },
@@ -9,6 +9,8 @@ const STATUS = {
 };
 const via = (r) => (r.channel === 'app' ? 'in the app' : r.channel === 'sms' ? 'by SMS' : r.channel === 'host' ? `confirmed by ${r.marked_by || 'front desk'}` : '');
 const people = (n) => `${n} ${n === 1 ? 'person' : 'people'}`;
+const ESCORT_TO = { dining: 'Restaurant', reception: 'Reception', bar: 'Bar / fire pit', room: 'Their tent or room', other: 'Other' };
+const ACTIVITY = { game_drive: 'Game drive', walking_safari: 'Walking safari', picnic: 'Picnic', sundowner: 'Sundowner', other: 'Other activity' };
 
 export function mount(main, ctx) {
   const isAdmin = BOOT.operator.role === 'admin';
@@ -22,7 +24,7 @@ export function mount(main, ctx) {
   async function load() {
     try {
       data = await api.get(`/api/lodge${qs({ lodge: lodgeId })}`);
-      const key = JSON.stringify([data.lodge, data.rollCall, data.alerts, data.sos, data.guests, data.allClear]);
+      const key = JSON.stringify([data.lodge, data.rollCall, data.alerts, data.sos, data.guests, data.allClear, data.escorts, data.activities.map((a) => [a.id, a.status])]);
       if (key !== lastKey) {
         lastKey = key;
         render();
@@ -42,7 +44,7 @@ export function mount(main, ctx) {
       el('div', {}, el('h1', {}, 'Front desk'), el('p', { class: 'sub' }, `${lodge.name} · ${lodge.area_name}`)),
       switcher ? el('div', { class: 'page-actions' }, switcher) : null);
     clear(body,
-      el('div', { class: 'desk-main' }, rollCallPanel(), alertsPanel(), sosPanel()),
+      el('div', { class: 'desk-main' }, rollCallPanel(), escortPanel(), alertsPanel(), outPanel(), sosPanel()),
       el('aside', { class: 'desk-side' }, qrPanel(), guestsPanel()));
   }
 
@@ -149,7 +151,8 @@ export function mount(main, ctx) {
                 el('div', { class: 'inc-meta' }, el('strong', {}, a.ref), a.at_property ? el('span', { class: 'desk-at' }, 'At your lodge') : null,
                   el('span', {}, `${age(a.opened_at)} ago`), a.source !== 'inference' ? el('span', { class: 'inc-tag' }, 'Simulated') : null),
                 el('strong', {}, a.title || a.zone_label),
-                el('div', { class: 'small muted' }, a.responder ? `Ranger ${a.responder} is responding` : 'Rangers alerted, waiting for a responder')),
+                el('div', { class: 'small muted' }, a.responder ? `Ranger ${a.responder} is responding` : 'Rangers alerted, waiting for a responder'),
+                a.guests_out ? el('div', { class: 'small desk-help-note' }, icon('users', 'icon icon-sm'), ` ${people(a.guests_out)} from your lodge ${a.guests_out === 1 ? 'is' : 'are'} out here now. Call their guide.`) : null),
               el('span', { class: `risk-text lv-${a.risk_level}` }, RISK[a.risk_level]?.label || ''))))
           : el('p', { class: 'muted' }, 'No wildlife alerts reported near your lodge. Keep normal night procedures.')));
   }
@@ -169,6 +172,96 @@ export function mount(main, ctx) {
               s.status === 'open' ? 'Waiting for a ranger' : s.status === 'acknowledged' ? `Ranger ${s.responder || ''} is responding` : 'Resolved')),
           el('span', { class: `inc-status tone-${s.status === 'open' ? 'urgent' : open ? 'warn' : 'ok'}` }, s.status === 'open' ? 'Pending' : open ? 'Responding' : 'Resolved'));
       }))));
+  }
+
+  // ---------------------------------------------------------------- night escorts
+  function escortPanel() {
+    const list = data.escorts;
+    const waiting = list.filter((e) => e.status === 'requested').length;
+    const dest = (e) => (e.to_key === 'other' ? e.to_text : ESCORT_TO[e.to_key]);
+    return el('section', { class: `panel${waiting ? ' desk-attn' : ''}`, 'aria-labelledby': 'esc-title' },
+      el('div', { class: 'panel-head' }, el('h2', { id: 'esc-title' }, icon('person'), 'Night escorts'), el('span', { class: 'muted small' }, waiting ? `${waiting} waiting` : '')),
+      el('div', { class: 'panel-body' }, list.length
+        ? el('ul', { class: 'desk-guests' }, list.map((e) => {
+            const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
+            const actions = [];
+            if (e.status === 'requested') {
+              const b = el('button', { type: 'button', class: 'btn btn-sm btn-primary' }, icon('check', 'icon icon-sm'), el('span', {}, 'Accept'));
+              b.addEventListener('click', async () => {
+                const who = el('input', { id: 'esc-who', value: BOOT.operator.name, maxlength: '60' });
+                const ok = await confirmDialog({ title: `Escort for ${e.name}`, body: el('div', { class: 'field' }, el('label', { for: 'esc-who' }, 'Who is going?'), who, el('p', { class: 'hint' }, 'The guest sees this name in the app.')), confirmLabel: 'Send escort' });
+                if (ok) await runAction(b, status, () => api.post(`/api/lodge/escorts/${e.id}/accept${qs({ lodge: lodgeId })}`, { escort_name: who.value.trim() }), { success: 'Escort on the way.' }).then(load);
+              });
+              actions.push(b);
+            }
+            if (e.status === 'requested' || e.status === 'accepted') {
+              const d = el('button', { type: 'button', class: 'btn btn-sm' }, 'Done');
+              d.addEventListener('click', () => runAction(d, status, () => api.post(`/api/lodge/escorts/${e.id}/done${qs({ lodge: lodgeId })}`, {}), { success: 'Escort done.' }).then(load));
+              actions.push(d);
+            }
+            const tone = e.status === 'requested' ? 'urgent' : e.status === 'accepted' ? 'warn' : 'ok';
+            const label = e.status === 'requested' ? 'Waiting' : e.status === 'accepted' ? `${e.escort_name} on the way` : 'Done';
+            return el('li', { class: `desk-guest st-${e.status === 'requested' ? 'help' : e.status === 'accepted' ? 'pending' : 'safe'}` },
+              el('span', { class: 'avatar', 'aria-hidden': 'true' }, initials(e.name)),
+              el('div', { class: 'grow' },
+                el('strong', {}, `${e.from_place} → ${dest(e)}`),
+                el('div', { class: 'small muted' }, `${e.name} · ${people(e.people)} · asked ${fmtTime(e.created_at, false)} · `, el('a', { href: `tel:${e.phone}` }, e.phone)),
+                e.note ? el('div', { class: 'small' }, `“${e.note}”`) : null),
+              el('div', { class: 'desk-guest-status' }, el('span', { class: `inc-status tone-${tone}` }, label), el('div', { class: 'row' }, actions), status));
+          }))
+        : el('p', { class: 'muted' }, 'No escort requests. Guests can ask for one in the app after dark.')));
+  }
+
+  // ---------------------------------------------------------------- guests out on activities
+  function outPanel() {
+    const list = data.activities;
+    const overdue = list.filter((a) => a.status === 'overdue').length;
+    const add = el('button', { type: 'button', class: 'btn btn-sm' }, icon('plus', 'icon icon-sm'), el('span', {}, 'Log an activity'));
+    add.addEventListener('click', () => logActivity());
+    const ST = { out: ['Out now', 'warn'], overdue: ['Overdue', 'urgent'], planned: ['Planned', 'muted'], returned: ['Back', 'ok'] };
+    return el('section', { class: `panel${overdue ? ' desk-attn' : ''}`, 'aria-labelledby': 'out-title' },
+      el('div', { class: 'panel-head' }, el('h2', { id: 'out-title' }, icon('map'), 'Guests out'), add),
+      el('div', { class: 'panel-body' }, list.length
+        ? el('ul', { class: 'desk-guests' }, list.map((a) => {
+            const status = el('span', { class: 'form-status', 'aria-live': 'polite' });
+            const back = a.status === 'returned' ? null : el('button', { type: 'button', class: 'btn btn-sm' }, a.status === 'planned' ? 'Cancel' : 'Back');
+            back?.addEventListener('click', () => runAction(back, status, () => api.post(`/api/lodge/activities/${a.id}/${a.status === 'planned' ? 'cancel' : 'back'}${qs({ lodge: lodgeId })}`, {}), { success: a.status === 'planned' ? 'Cancelled.' : `${a.name} is back.` }).then(load));
+            const [label, tone] = ST[a.status] || ['', 'muted'];
+            return el('li', { class: `desk-guest st-${a.status === 'overdue' ? 'help' : a.status === 'out' ? 'pending' : 'safe'}` },
+              el('span', { class: 'avatar', 'aria-hidden': 'true' }, initials(a.name)),
+              el('div', { class: 'grow' },
+                el('strong', {}, `${a.name} · ${ACTIVITY[a.kind] || a.kind}`),
+                el('div', { class: 'small muted' }, `${a.zone_name} · ${people(a.people)} · ${a.status === 'planned' ? `from ${fmtTime(a.starts_at, false)}, ` : ''}back by ${fmtTime(a.ends_at, false)}${a.returned_at ? ` · back ${fmtTime(a.returned_at, false)}` : ''} · `, el('a', { href: `tel:${a.phone}` }, a.phone))),
+              el('div', { class: 'desk-guest-status' }, el('span', { class: `inc-status tone-${tone}` }, label), back, status));
+          }))
+        : el('p', { class: 'muted' }, 'Nobody is out. Guests check in walks, drives and picnics in the app, or log one here.')));
+  }
+
+  async function logActivity() {
+    const guest = el('select', { id: 'la-guest' }, data.guests.map((g) => el('option', { value: String(g.id) }, `${g.name} (${people(g.group_size)})`)));
+    const kind = el('select', { id: 'la-kind' }, Object.entries(ACTIVITY).map(([v, l]) => el('option', { value: v }, l)));
+    const place = el('select', { id: 'la-place' }, data.places.map((p) => el('option', { value: String(p.id) }, `${p.name} (${p.kind})`)));
+    const hours = el('select', { id: 'la-hours' }, [1, 2, 3, 4, 6, 8].map((h) => el('option', { value: String(h), selected: h === 3 }, `${h} hour${h === 1 ? '' : 's'}`)));
+    const f = (id, l, c) => el('div', { class: 'field' }, el('label', { for: id }, l), c);
+    if (!data.guests.length || !data.places.length) {
+      await confirmDialog({ title: 'Log an activity', body: !data.guests.length ? 'No guests are staying tonight.' : 'No outing places are set up in this area. Ask an admin to add trails or picnic sites under Safety zones.', confirmLabel: 'OK' });
+      return;
+    }
+    const ok = await confirmDialog({
+      title: 'Log an activity',
+      body: el('div', { class: 'stack' }, f('la-guest', 'Guest', guest), f('la-kind', 'Activity', kind), f('la-place', 'Where', place), f('la-hours', 'Back in', hours),
+        el('p', { class: 'hint' }, 'Starts now. Rangers see the group on their map, and wildlife alerts there count these guests.')),
+      confirmLabel: 'Log activity',
+    });
+    if (!ok) return;
+    const ends = new Date(Date.now() + Number(hours.value) * 3_600_000).toISOString();
+    try {
+      await api.post(`/api/lodge/activities${qs({ lodge: lodgeId })}`, { tourist_id: Number(guest.value), kind: kind.value, zone_id: Number(place.value), ends_at: ends });
+      toast('Activity logged.');
+      load();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 
   // ---------------------------------------------------------------- check-in QR and guests
@@ -194,7 +287,7 @@ export function mount(main, ctx) {
       el('div', { class: 'panel-body stack' },
         el('p', { class: 'qr-print-title' }, `Welcome to ${data.lodge.name}`),
         el('img', { src: `/api/lodge/qr.svg${qs({ lodge: lodgeId, v: data.lodge.checkin_code })}`, alt: `QR code to check in at ${data.lodge.name}`, width: '220', height: '220', class: 'desk-qr-img' }),
-        el('p', { class: 'small' }, el('strong', {}, 'Scan to get wildlife alerts and one-tap SOS during your stay.'), ' English / Kiswahili.'),
+        el('p', { class: 'small' }, el('strong', {}, 'Scan to get wildlife alerts and one-tap SOS during your stay.'), ' In 7 languages.'),
         el('p', { class: 'small muted desk-code' }, 'Code ', el('strong', {}, data.lodge.checkin_code)),
         el('div', { class: 'row' }, print, copy)));
   }
@@ -208,7 +301,7 @@ export function mount(main, ctx) {
         ? el('ul', { class: 'desk-guestlist' }, g.map((x) => el('li', {},
             el('span', { class: 'avatar', 'aria-hidden': 'true' }, initials(x.name)),
             el('div', { class: 'grow' }, el('strong', {}, x.name, x.demo ? el('span', { class: 'inc-tag small' }, ' Demo') : null),
-              el('div', { class: 'small muted' }, `${people(x.group_size)} · ${x.language === 'sw' ? 'Kiswahili' : 'English'} · leaves ${new Date(`${x.trip_end}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`)),
+              el('div', { class: 'small muted' }, `${people(x.group_size)} · ${languageName(x.language)} · leaves ${new Date(`${x.trip_end}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`)),
             el('a', { class: 'btn btn-sm btn-ghost', href: `tel:${x.phone}`, 'aria-label': `Call ${x.name}` }, icon('phone', 'icon icon-sm')))))
         : el('p', { class: 'muted' }, 'No guests checked in. Ask arriving guests to scan the QR code.')));
   }

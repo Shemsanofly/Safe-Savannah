@@ -13,7 +13,7 @@ no CDN). Leaflet is served locally; only map tiles need internet.
 
 | Interface | Who | Highlights |
 |---|---|---|
-| **Traveller app** `/t` | Tourists (English / Kiswahili) | Two-step sign-up · Home with one clear safety status and what to do · wildlife alerts for their area · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with a live tracker: Received → Ranger responding → Resolved · share location · safety tips and phrases |
+| **Traveller app** `/t` | Tourists (English, Kiswahili, French, German, Italian, Spanish, Chinese) | Two-step sign-up · Home with one clear safety status and what to do · wildlife alerts for their area · one-tap **SOS** (Medical, Dangerous wildlife, Vehicle breakdown, Personal safety) with a live tracker: Received → Ranger responding → Resolved · share location · safety tips and phrases |
 | **Ranger console** `/` | Rangers | **Live map** with a priority list (SOS first, then risk) and one-tap "I'm responding" · incidents with search and filters · status **Pending → Responding → Resolved** · radio/phone handoff log · reporter tap-to-call · detections log · **Check a photo** (AI analysis) · on-duty indicator |
 | **Front desk** `/` (lodge staff) | Lodge and camp reception | Guests staying tonight · wildlife alerts at the property · live **"Are you safe?" roll call** · guest SOS · printable check-in QR code |
 | **Admin** (same console, extra screens) | Administrators | Dashboard · **Lodges & camps** · **Safety zones** editor (click to draw) · **People** (rangers, admins, front desks and tourist accounts) · Reports + CSV · settings · demo scenarios |
@@ -57,7 +57,7 @@ and zone outlines are illustrative.**
 |---|---|
 | http://127.0.0.1:8080 (staff) | ranger `juma` / PIN `2468` (also `neema`, `baraka`, `rehema`, `saning`) · admin: your first operator, or `admin` / `1357` if the seed created one |
 | http://127.0.0.1:8080 (front desk) | `desk1` / PIN `3579` (Seronera tented camp; also `desk2` Riverside lodge, `desk3` Crater-rim lodge) |
-| http://127.0.0.1:8080/t (traveller) | `+255765000201` / PIN `1234` (also `…202`–`…210`; `…203`, `…205` and `…208` use Kiswahili). Six demo guests are staying at Seronera tented camp. |
+| http://127.0.0.1:8080/t (traveller) | `+255765000201` / PIN `1234` (also `…202`–`…210`; `…203`, `…205` and `…208` use Kiswahili, `…206` Italian and `…207` French). Six demo guests are staying at Seronera tented camp. |
 
 Demo phone numbers are made up. The app **never** sends to demo people through a **live** Africa's Talking
 account; in the sandbox they're useful for the simulator.
@@ -148,7 +148,7 @@ the seeded demo data; "Simulated" and "Demo" labels are shown exactly as in the 
 | **Home** | A trip card (camp, dates, group), then **one reported status**: *No active alerts reported*, *Rangers are watching wildlife nearby*, or a *Warning* / *Danger* card with the top three things to do. The last update time and stale-data notice show whether the information is current. Below: a large **SOS** button and quick actions (share location, call the emergency line, safety tips). An open SOS shows its tracker at the top. |
 | **Alerts** | *Happening now* first, each with a Danger / Warning / Advisory label and a "What to do" list; earlier alerts (last 48 h) fold up. Exact animal positions are never shown. |
 | **SOS** | Three steps: pick the emergency type, add details if you want, then **Send SOS** (with a confirmation). After sending, a live tracker shows *Received → [ranger] is responding → Resolved* with times, and a Call button. |
-| **Safety** | Guidance by topic (elephants, big cats, buffalo, hippos, camp at night, vehicle breakdown) and Kiswahili phrases. |
+| **Safety** | Guidance by topic (elephants, big cats, buffalo, hippos, camp at night, vehicle breakdown) and useful Kiswahili phrases, explained in the guest's language. |
 | **My trip** | Edit destination, lodge, dates, group, emergency contact and SMS alerts; account panel with sign-out. |
 
 <img src="docs/screenshots/traveller-home-desktop.jpg" width="720" alt="Traveller home on a computer">
@@ -206,7 +206,7 @@ has a front-desk account and a check-in QR code. Four features build on that:
 |---|---|
 | **Lodges and the front desk** | Admins add a lodge under **Lodges & camps**: name, area, the safety zone it sits on and a front-desk phone. A **Front desk** account (Staff management, role *Front desk*) sees only that lodge: guests staying tonight with tap-to-call, wildlife alerts at the property and in the area, guest SOS, and the roll call. Front-desk accounts cannot open ranger screens or data; the server enforces this. |
 | **Check-in by QR code** | The front desk prints the lodge's QR code. A guest scans it: new guests get the two-step sign-up with the lodge and area already filled in (only dates and group are left); registered guests sign in and confirm their leaving date. Either way they are linked to the lodge for their stay. Admins can replace the code if a printout goes missing. |
-| **"Are you safe?" roll call** | A **high or critical** wildlife alert at a lodge's zone starts a roll call by itself (the front desk can also start one, for example as a drill). Every guest staying tonight gets one SMS, *"Are you safe? Reply SAFE or HELP"* (Kiswahili: *SALAMA* / *MSAADA*), instead of a second warning, and a big **I'm safe / I need help** card in the app. **I need help** opens an SOS for the rangers with the guest's location. The front desk watches answers arrive (safe, needs help, no reply), calls anyone silent and can mark them safe after seeing or speaking to them. The incident log records when the roll call started and when everyone answered. |
+| **"Are you safe?" roll call** | A **high or critical** wildlife alert at a lodge's zone starts a roll call by itself (the front desk can also start one, for example as a drill). Every guest staying tonight gets one SMS, *"Are you safe? Reply SAFE or HELP"* (Kiswahili: *SALAMA* / *MSAADA*; other languages reply *1* / *2*) in their own language, instead of a second warning, and a big **I'm safe / I need help** card in the app. **I need help** opens an SOS for the rangers with the guest's location. The front desk watches answers arrive (safe, needs help, no reply), calls anyone silent and can mark them safe after seeing or speaking to them. The incident log records when the roll call started and when everyone answered. |
 | **All clear** | When a ranger resolves the incident (handled or false alarm), every guest and lodge that was warned or asked gets an **all clear** in their language, by SMS and in the app, and the roll call ends. SOS incidents never send an all clear. |
 
 ![Front desk during a roll call](docs/screenshots/front-desk-rollcall-desktop.jpg)
@@ -230,6 +230,49 @@ has a front-desk account and a check-in QR code. Four features build on that:
 
 SMS replies arrive through Africa's Talking's incoming-message callback (see below). Without a public tunnel
 and `WEBHOOK_TOKEN`, guests answer in the app and the front desk confirms the rest.
+
+## Guest requests: night escorts and going out
+
+Two everyday requests that also make the safety picture more accurate.
+
+| Feature | What happens |
+|---|---|
+| **Night escort** | After dark a guest taps **Night escort**, says where they are (e.g. *Tent 9*) and where they are going (restaurant, reception, bar, their room or somewhere else) and how many people. The front desk sees it at the top of the page with a *1 escort waiting* pill in the header, taps **Accept**, types who is going (*"Joseph is on the way"*) and **Done** when the guest has arrived. The guest's app follows each step: *Waiting → Joseph is on the way → Done*. One open request per guest. |
+| **Going out (activity check-in)** | Before a game drive, walk, picnic or sundowner, the guest (or the front desk, with **Log an activity**) records where they are going, how many people and when they will be back. The front desk lists everyone out and marks them **Back**; a group 30 minutes past its return time shows as **overdue** in red and in the header. The rangers' live map shows a blue head-count marker on that zone (no names). If wildlife is detected there, the risk engine counts those people as present now, so a lion near a trail at a quiet hour still rises to high or critical, and the front desk's alert says *2 guests out here*. |
+
+| Going out (phone) | Night escort (phone) | Home with both (phone) |
+|---|---|---|
+| <img src="docs/screenshots/guest-going-out-phone.jpg" width="190" alt="Going out form"> | <img src="docs/screenshots/guest-escort-request-phone.jpg" width="190" alt="Night escort request"> | <img src="docs/screenshots/guest-plans-phone.jpg" width="190" alt="Home showing the escort and activity"> |
+
+![Front desk: night escorts and guests out](docs/screenshots/front-desk-escorts-desktop.jpg)
+
+![Ranger map with a group of guests out](docs/screenshots/ranger-map-guests-out-desktop.jpg)
+
+**Demo:** sign in as guest `+255765000209` / `1234` (Hannah, Seronera tented camp). Tap **Going out**, pick
+*Walking safari* on *Kopjes walking trail*, then **Night escort** from *Tent 9* to the restaurant. As `desk1`
+accept the escort; as ranger `juma` see the group on the map. Run **Lion near tented camp**: the alert at the
+front desk notes the guests who are out.
+
+## Guest languages
+
+The traveller app, wildlife alerts, the roll call, the all clear and guest SMS come in **seven languages**:
+English, Kiswahili, French, German, Italian, Spanish and Chinese (Simplified).
+
+- **First visit** uses the phone's language when it is one of the seven, otherwise English. The globe menu in
+  the header switches at any time; signed-in guests' choice is saved to their account, so their SMS switch too.
+- **Alerts and all clears** are written in every language when they are created (`tourist_alerts.content`), so
+  each guest reads the same alert in their own language, and staff see which language each guest uses.
+- **SMS roll call:** English and Kiswahili guests reply *SAFE* / *HELP* (*SALAMA* / *MSAADA*); the other
+  languages reply **1** (safe) or **2** (need help). The words *sûr*, *sicher*, *salvo*, *安全*, *救命* and so on are
+  understood too.
+- **USSD and voice calls** stay English and Kiswahili.
+- Translations live in `public/js/tourist/locales/` (screens) and `src/domain/locales/` (alerts and SMS). They
+  were machine-assisted; **have a native speaker review them before a real launch**. Accented and Chinese
+  text is sent as Unicode SMS, which fits fewer characters per message, so some SMS go out in two parts.
+
+| German sign-in (phone) | Roll call in French (phone) | Alerts in Chinese (phone) |
+|---|---|---|
+| <img src="docs/screenshots/guest-signin-german-phone.jpg" width="190" alt="Sign-in page in German"> | <img src="docs/screenshots/guest-are-you-safe-french-phone.jpg" width="190" alt="Are you safe? in French"> | <img src="docs/screenshots/guest-alerts-chinese-phone.jpg" width="190" alt="Alerts in Chinese"> |
 
 ## Africa's Talking
 
@@ -294,7 +337,9 @@ previously rejected or expired jobs are not automatically sent again.
   0.45. Beyond it there is no risk.
 - **Zone sensitivity**: high 1.0, medium 0.7, low 0.35.
 - **People present now**: always, daytime (06–19 lodge time), night, or rarely. Registered tourists who shared a
-  location within 300 m in the last 30 minutes add a further boost.
+  location within 300 m in the last 30 minutes add a further boost. **Guests checked out on an activity** (a game
+  drive, walk or picnic) at that zone count as people there right now, whatever the zone's usual hours, and the
+  reason says so: *"4 guests out here now on a walking safari, back by 17:30 (activity check-in)"*.
 - **Detector confidence**: below 60% the score is down-weighted and the alert asks rangers to verify.
 - The thresholds give the levels: low ≥ 0.10, medium ≥ 0.28, high ≥ 0.5, critical ≥ 0.75. **A harmless species
   never rises above low, even inside a lodge.**
@@ -366,6 +411,8 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 | `GET /api/stats?days=`, `POST /api/sim/scenario`, `POST /api/sim/state` | staff / admin | Statistics, demo scenarios, pause simulator |
 | `GET /api/public/lodges/:code`, `POST /api/tourist/checkin`, `POST /api/tourist/checks/:id` | public / tourist | Look up a check-in code, check in, answer a roll call (`safe` \| `help`; help opens an SOS) |
 | `GET /api/lodge`, `/api/lodge/pulse`, `/api/lodge/qr.svg`, `POST /api/lodge/checks`, `…/checks/:id/responses/:touristId`, `…/checks/:id/close` | front desk, admin (`?lodge=`) | Front-desk view, header status, check-in QR, start / confirm safe / end a roll call |
+| `GET /api/tourist/places`, `POST /api/tourist/escort`, `…/escort/:id/cancel`, `POST /api/tourist/activities`, `…/activities/:id/back\|cancel` | tourist | Places to go out to, ask for or cancel a night escort, check out on an activity and back in |
+| `POST /api/lodge/escorts/:id/accept` (`escort_name`), `…/escorts/:id/done`, `POST /api/lodge/activities`, `…/activities/:id/back\|cancel` | front desk | Handle escorts; log an activity for an in-house guest and mark the group back |
 | `GET/POST/PATCH /api/lodges`, `POST /api/lodges/:id/code` | admin | Lodges and new check-in codes |
 | `POST /webhooks/sms-status`, `/webhooks/sms-inbound`, `/webhooks/ussd`, `/webhooks/voice` | provider (token) | Africa's Talking callbacks (delivery reports, roll-call replies, USSD, voice) |
 
@@ -375,7 +422,7 @@ map, the incident pages, Detections, the Dashboard (which states the simulated/r
 npm test
 ```
 
-94 tests. `test/platform.test.ts` covers:
+145 tests. `test/platform.test.ts` covers:
 
 - geofencing and the risk engine (species, distance, occupancy, confidence, harmless species);
 - detection → incident → ranger/tourist SMS and voice (atomic, deduplicated, escalation);
@@ -385,6 +432,10 @@ npm test
 - admin-only permissions, geofence validation and AI upload modes;
 - that scenarios are labelled simulated;
 - that the Africa's Talking adapter sends nothing without a key.
+
+`test/hospitality.test.ts` covers lodges, QR check-in, the roll call (including SMS replies in every language)
+and the all clear; `test/guestPlans.test.ts` covers night escorts, activity check-ins and their effect on risk;
+`test/i18n.test.ts` checks that every language has every species, safety step, alert and SMS text.
 
 The earlier suites still cover the gate camera, the outbox and the dashboard API.
 

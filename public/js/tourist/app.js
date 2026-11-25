@@ -1,6 +1,6 @@
 // Safe Savannah traveller app (mobile-first, English / Kiswahili).
 import { ApiError, api, BOOT, clear, confirmDialog, el, icon, setServerTime, toast } from '../lib.js';
-import { GUIDE, PHRASES, STRINGS } from './i18n.js';
+import { GUIDE, LANGUAGES, LOCALE, PHRASE_MEANINGS, PHRASES, STRINGS } from './i18n.js';
 
 const main = document.getElementById('t-main');
 const nav = document.getElementById('t-nav');
@@ -48,7 +48,11 @@ const T = (k, ...a) => {
 };
 function readLang() {
   try {
-    return localStorage.getItem('ss-lang') === 'sw' ? 'sw' : 'en';
+    const saved = localStorage.getItem('ss-lang');
+    if (STRINGS[saved]) return saved;
+    // First visit: use the phone's language when we have it.
+    const phone = (navigator.language || 'en').slice(0, 2).toLowerCase();
+    return STRINGS[phone] ? phone : 'en';
   } catch {
     return 'en';
   }
@@ -62,23 +66,26 @@ function setLang(l) {
   } catch {
     /* ignore */
   }
-  document.documentElement.lang = l;
-  document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === l)));
+  syncLangPicker();
   if (me) api.patch('/api/tourist/me', { language: l }).catch(() => undefined); // SMS also switch language
   route();
 }
-document.querySelectorAll('[data-lang]').forEach((b) => b.addEventListener('click', () => setLang(b.dataset.lang)));
-document.documentElement.lang = lang;
-document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === lang)));
+const langPicker = document.getElementById('t-lang-select');
+function syncLangPicker() {
+  if (langPicker) langPicker.value = lang;
+  document.documentElement.lang = lang === 'zh' ? 'zh-Hans' : lang;
+}
+langPicker?.addEventListener('change', () => setLang(langPicker.value));
+syncLangPicker();
 
 const tAge = (iso) => {
   const s = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000));
-  if (s < 60) return lang === 'sw' ? 'sasa hivi' : 'just now';
-  if (s < 3600) return lang === 'sw' ? `dakika ${Math.floor(s / 60)} zilizopita` : `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return lang === 'sw' ? `saa ${Math.floor(s / 3600)} zilizopita` : `${Math.floor(s / 3600)} h ago`;
-  return new Date(iso).toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-GB', { day: 'numeric', month: 'short' });
+  if (s < 60) return T('age_now');
+  if (s < 3600) return T('age_min', Math.floor(s / 60));
+  if (s < 86400) return T('age_hours', Math.floor(s / 3600));
+  return new Date(iso).toLocaleDateString(LOCALE[lang] || 'en-GB', { day: 'numeric', month: 'short' });
 };
-const fmtDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+const fmtDay = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString(LOCALE[lang] || 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
 
 // ---------------------------------------------------------------- data
 async function loadMe() {
@@ -121,8 +128,7 @@ function sessionStorageGet(k) {
 }
 function setLangSilently(l) {
   lang = l;
-  document.documentElement.lang = l;
-  document.querySelectorAll('[data-lang]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.lang === l)));
+  syncLangPicker();
 }
 // lib.api redirects to /login on 401; the traveller app handles 401 itself.
 const tApi = {
@@ -161,14 +167,14 @@ function updateFreshness() {
   const stale = !!me && (failures > 0 || !lastFeedAt || Date.now() - lastFeedAt > 45000);
   main.classList.toggle('is-stale', stale);
   const label = main.querySelector('[data-feed-freshness]');
-  if (label) label.textContent = `${stale ? `${T('status_stale')} · ` : ''}${T('updated')}: ${lastFeedAt ? new Date(lastFeedAt).toLocaleTimeString(lang === 'sw' ? 'sw-TZ' : 'en-GB') : '—'}`;
+  if (label) label.textContent = `${stale ? `${T('status_stale')} · ` : ''}${T('updated')}: ${lastFeedAt ? new Date(lastFeedAt).toLocaleTimeString(LOCALE[lang] || 'en-GB') : '—'}`;
 }
 setInterval(updateFreshness, 1000);
 
 async function route() {
   clearInterval(timer);
   const r = currentRoute();
-  const needsAuth = ['home', 'alerts', 'sos', 'trip'].includes(r);
+  const needsAuth = ['home', 'alerts', 'sos', 'trip', 'escort', 'out'].includes(r);
   // Always fetch fresh data when entering a signed-in screen (status may have changed meanwhile).
   if (needsAuth) await loadMe();
   if (needsAuth && !me) return go('welcome');
@@ -180,7 +186,7 @@ async function route() {
   const isAuth = !me && ['welcome', 'login', 'register', 'checkin'].includes(r);
   document.body.classList.toggle('t-auth-page', isAuth);
   nav.hidden = isAuth;
-  const views = { welcome, login, register, home, alerts, sos, guide, trip, checkin };
+  const views = { welcome, login, register, home, alerts, sos, guide, trip, checkin, escort, out };
   (views[r] || (me ? home : welcome))();
   main.querySelector('h1')?.focus({ preventScroll: true });
   window.scrollTo({ top: 0 });
@@ -422,7 +428,9 @@ async function register() {
 const LEVEL_ICON = { danger: 'siren', warning: 'alert', advisory: 'info', clear: 'check-circle' };
 const SOS_TYPES = [['medical', 'heart', 't_medical'], ['wildlife', 'paw', 't_wildlife'], ['vehicle', 'car', 't_vehicle'], ['personal', 'shield', 't_personal']];
 const sosDraft = { type: null, details: '', withLoc: true }; // survives background refreshes
-const localized = (a, k) => (lang === 'sw' ? a[`${k}_sw`] : a[`${k}_en`]) || '';
+/** Alert text in the guest's language: stored translations first, then the Kiswahili/English columns. */
+const localized = (a, k) => a.content?.[lang]?.[k] ?? (lang === 'sw' ? a[`${k}_sw`] : a[`${k}_en`]) ?? a[`${k}_en`] ?? '';
+const alertSteps = (a) => a.content?.[lang]?.actions ?? (lang === 'sw' ? a.actions_sw : a.actions_en) ?? [];
 const isSimulated = (a) => /simulated|jaribio/i.test(`${a.title_en} ${a.title_sw}`);
 const isOpen = (s) => s.status === 'open' || s.status === 'acknowledged';
 const firstName = () => me.tourist.name.split(' ')[0];
@@ -442,6 +450,7 @@ function home() {
   page(`${T('hello')}, ${firstName()}`,
     check ? rollCallCard(check, home) : travellerIntro(),
     openSos ? sosTracker(openSos, { compact: true }) : null,
+    planCards(),
     el('div', { class: 't-home' },
       el('div', { class: 't-col' }, tripCard(), safetyStatus(active, feed.activeWildlifeIncidents, recentClear())),
       el('div', { class: 't-col' }, openSos ? null : sosCallout(), quickActions())));
@@ -488,7 +497,7 @@ function rollCallCard(check, view) {
   return el('section', { class: 't-rollcall is-ask', 'aria-labelledby': 't-rc-title' },
     el('p', { class: 't-kicker' }, T('rc_kicker', check.lodge_name)),
     el('h2', { id: 't-rc-title' }, T('rc_title')),
-    el('p', { class: 't-rc-reason' }, icon('alert', 'icon icon-sm'), el('span', {}, check.reason)),
+    el('p', { class: 't-rc-reason' }, icon('alert', 'icon icon-sm'), el('span', {}, check.reason_i18n?.[lang] || check.reason)),
     el('div', { class: 't-rc-actions' }, safe, help),
     el('p', { class: 't-rc-note' }, T('rc_body')),
     err);
@@ -554,7 +563,7 @@ function safetyStatus(active, monitoring, clears = []) {
   if (active.length) {
     const sev = active.some((a) => a.level === 'danger') ? 'danger' : 'warning';
     const lead = active.find((a) => a.level === sev) || active[0];
-    const steps = (lang === 'sw' ? lead.actions_sw : lead.actions_en) || [];
+    const steps = alertSteps(lead);
     return el('section', { class: `t-safety is-${sev}`, role: 'status', 'aria-labelledby': 't-safety-title' },
       el('div', { class: 't-safety-head' }, el('span', { class: 't-safety-icon' }, icon(sev === 'danger' ? 'siren' : 'alert')),
         el('div', {}, el('p', { class: 't-kicker' }, T(sev === 'danger' ? 'status_danger' : 'status_warning')), el('h2', { id: 't-safety-title' }, localized(lead, 'title')))),
@@ -598,9 +607,13 @@ function quickActions() {
     sub.textContent = `${T('location_shared')} · ${tAge(new Date().toISOString())}`;
     toast(T('location_shared'));
   }));
+  const tile = (href, ic, title, subText) => el('a', { class: 't-qa', href }, el('span', { class: 't-qa-icon' }, icon(ic)), el('span', { class: 't-qa-text' }, el('strong', {}, title), el('small', {}, subText)));
   return el('section', { class: 't-quick', 'aria-labelledby': 't-qa-title' },
     el('h3', { id: 't-qa-title', class: 't-section-title' }, T('quick_actions')),
-    el('div', { class: 't-qa-grid' }, share,
+    el('div', { class: 't-qa-grid' },
+      tile('#/out', 'map', T('out_short'), T('out_qa_sub')),
+      t.lodge_id ? tile('#/escort', 'person', T('escort_short'), T('escort_qa_sub')) : null,
+      share,
       el('a', { class: 't-qa', href: `tel:${line}` }, el('span', { class: 't-qa-icon' }, icon('phone')), el('span', { class: 't-qa-text' }, el('strong', {}, `${T('call_short')} ${line}`), el('small', {}, T('emergency_line')))),
       el('a', { class: 't-qa', href: '#/guide' }, el('span', { class: 't-qa-icon' }, icon('book')), el('span', { class: 't-qa-text' }, el('strong', {}, T('tips_short')), el('small', {}, T('tips_sub'))))));
 }
@@ -622,7 +635,7 @@ function alerts() {
 
 function alertCard(a, past = false) {
   const lvl = LEVEL_ICON[a.level] ? a.level : 'advisory';
-  const steps = (lang === 'sw' ? a.actions_sw : a.actions_en) || [];
+  const steps = alertSteps(a);
   const head = el('div', { class: 't-alert-head' },
     el('span', { class: 't-alert-icon' }, icon(LEVEL_ICON[lvl])),
     el('div', { class: 't-alert-title' },
@@ -734,6 +747,179 @@ function requestHistory(current) {
       : el('p', { class: 't-muted' }, T('no_requests')));
 }
 
+// ---------------------------------------------------------------- night escort and going out
+const fmtClock = (iso) => new Date(iso).toLocaleTimeString(LOCALE[lang] || 'en-GB', { hour: '2-digit', minute: '2-digit' });
+const localInput = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+
+/** Status cards for an open escort request and an activity check-in (shown on Home). */
+function planCards() {
+  const e = me.feed.escort;
+  const a = me.feed.activity;
+  const cards = [];
+  if (e) {
+    const tone = e.status === 'requested' ? 'is-wait' : e.status === 'accepted' ? 'is-go' : 'is-done';
+    cards.push(el('a', { class: `t-plan ${tone}`, href: '#/escort' }, el('span', { class: 't-plan-icon' }, icon(e.status === 'done' ? 'check-circle' : 'person')),
+      el('span', { class: 't-plan-text' },
+        el('strong', {}, e.status === 'requested' ? T('escort_waiting') : e.status === 'accepted' ? T('escort_coming', e.escort_name) : T('escort_done')),
+        el('small', {}, `${e.from_place} → ${escortDest(e)}`)),
+      icon('chevron-right', 'icon icon-sm')));
+  }
+  if (a && a.status !== 'returned') {
+    const tone = a.status === 'overdue' ? 'is-late' : a.status === 'planned' ? 'is-wait' : 'is-go';
+    cards.push(el('a', { class: `t-plan ${tone}`, href: '#/out' }, el('span', { class: 't-plan-icon' }, icon(a.status === 'overdue' ? 'clock' : 'map')),
+      el('span', { class: 't-plan-text' },
+        el('strong', {}, a.status === 'overdue' ? T('out_overdue') : T(a.status === 'planned' ? 'out_planned' : 'out_active', `${T(`act_${a.kind}`)} · ${a.zone_name}`)),
+        el('small', {}, T('out_until', fmtClock(a.ends_at)))),
+      icon('chevron-right', 'icon icon-sm')));
+  }
+  return cards.length ? el('div', { class: 't-plans' }, cards) : null;
+}
+const escortDest = (e) => (e.to_key === 'other' ? e.to_text : T(`to_${e.to_key}`));
+
+function escort() {
+  const t = me.tourist;
+  const e = me.feed.escort;
+  const head = pageHead(T('escort_title'), T('escort_sub'));
+  if (!t.lodge_id) {
+    page(T('escort_title'), head, emptyCard('home', T('escort_title'), T('escort_need_lodge')));
+    return;
+  }
+  if (e && e.status !== 'done') {
+    const cancel = el('button', { type: 'button', class: 'btn btn-block' }, el('span', {}, T('escort_cancel')));
+    cancel.addEventListener('click', () => busy(cancel, async () => {
+      await tApi.post(`/api/tourist/escort/${e.id}/cancel`, {});
+      await loadMe();
+      escort();
+    }));
+    const coming = e.status === 'accepted';
+    page(T('escort_title'), head,
+      el('section', { class: `t-tracker ${coming ? 'is-done' : 'is-open'}`, 'aria-live': 'polite' },
+        el('div', { class: 't-tracker-head' }, el('span', { class: 't-tracker-icon' }, icon('person')),
+          el('div', {}, el('p', { class: 't-kicker' }, `${e.from_place} → ${escortDest(e)}`), el('h2', {}, coming ? T('escort_coming', e.escort_name) : T('escort_waiting')))),
+        el('p', { class: 't-tracker-hint' }, T(coming ? 'escort_coming_sub' : 'escort_waiting_sub'))),
+      cancel, emergencyLink());
+    pollMe(5000, escort);
+    return;
+  }
+  const from = el('input', { id: 'e-from', maxlength: '60', placeholder: T('escort_from_ph'), value: readPref('ss-escort-from') || '' });
+  const other = el('input', { id: 'e-other', maxlength: '60' });
+  const otherField = field('e-other', T('escort_to_other'), other);
+  const dest = pickChips('e-to', ['dining', 'reception', 'bar', 'room', 'other'].map((k) => [k, T(`to_${k}`)]), 'dining', (v) => { otherField.hidden = v !== 'other'; });
+  otherField.hidden = true;
+  const peopleIn = el('input', { id: 'e-people', type: 'number', min: '1', max: '60', inputmode: 'numeric', value: String(t.group_size) });
+  const note = el('input', { id: 'e-note', maxlength: '200' });
+  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
+  const send = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, icon('person'), el('span', {}, T('escort_send')));
+  const form = el('form', { class: 't-panel t-form', novalidate: true },
+    field('e-from', T('escort_from'), from),
+    el('div', { class: 'field' }, el('span', { class: 'label', id: 'e-to-label' }, T('escort_to')), dest.node), otherField,
+    el('div', { class: 't-form-grid' }, field('e-people', T('escort_people'), peopleIn), field('e-note', T('escort_note'), note)),
+    err, send);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    err.hidden = true;
+    if (!from.value.trim()) { err.hidden = false; err.textContent = T('err_required'); from.focus(); return; }
+    if (dest.value() === 'other' && !other.value.trim()) { err.hidden = false; err.textContent = T('err_required'); other.focus(); return; }
+    busy(send, async () => {
+      try {
+        await tApi.post('/api/tourist/escort', { from_place: from.value.trim(), to_key: dest.value(), to_text: other.value.trim() || null, people: Number(peopleIn.value || 1), note: note.value.trim() || null });
+        writePref('ss-escort-from', from.value.trim());
+        toast(T('escort_sent'));
+        await loadMe();
+        escort();
+      } catch (e2) {
+        err.hidden = false;
+        err.textContent = e2.message;
+      }
+    });
+  });
+  page(T('escort_title'), head, form, emergencyLink());
+}
+
+async function out() {
+  const a = me.feed.activity;
+  const head = pageHead(T('out_title'), T('out_sub'));
+  if (a && a.status !== 'returned') {
+    const done = el('button', { type: 'button', class: 'btn btn-primary btn-lg btn-block' }, icon('check-circle'), el('span', {}, a.status === 'planned' ? T('out_cancel') : T('out_im_back')));
+    done.addEventListener('click', () => busy(done, async () => {
+      await tApi.post(`/api/tourist/activities/${a.id}/${a.status === 'planned' ? 'cancel' : 'back'}`, {});
+      if (a.status !== 'planned') toast(T('out_back_thanks'));
+      await loadMe();
+      out();
+    }));
+    const late = a.status === 'overdue';
+    page(T('out_title'), head,
+      el('section', { class: `t-tracker ${late ? 'is-open' : 'is-done'}`, 'aria-live': 'polite' },
+        el('div', { class: 't-tracker-head' }, el('span', { class: 't-tracker-icon' }, icon(late ? 'clock' : 'map')),
+          el('div', {}, el('p', { class: 't-kicker' }, `${T(`act_${a.kind}`)} · ${a.zone_name}`),
+            el('h2', {}, late ? T('out_overdue') : T(a.status === 'planned' ? 'out_planned' : 'out_active', a.zone_name)))),
+        el('p', { class: 't-tracker-hint' }, late ? T('out_overdue_sub') : T('out_until', fmtClock(a.ends_at)))),
+      done, emergencyLink());
+    pollMe(15000, out);
+    return;
+  }
+  const places = (await api.get('/api/tourist/places').catch(() => ({ places: [] }))).places;
+  if (currentRoute() !== 'out') return;
+  if (!places.length) {
+    page(T('out_title'), head, emptyCard('map', T('out_title'), T('out_no_places')));
+    return;
+  }
+  const kind = pickChips('o-kind', ['game_drive', 'walking_safari', 'picnic', 'sundowner', 'other'].map((k) => [k, T(`act_${k}`)]), 'game_drive');
+  const where = el('select', { id: 'o-where' }, places.map((p) => el('option', { value: String(p.id) }, p.name)));
+  const later = el('input', { id: 'o-start', type: 'datetime-local', value: localInput(new Date(Date.now() + 3_600_000)) });
+  const laterField = field('o-start', T('out_when'), later);
+  laterField.hidden = true;
+  const when = pickChips('o-when', [['now', T('out_now')], ['later', T('out_later')]], 'now', (v) => { laterField.hidden = v !== 'later'; });
+  const back = el('input', { id: 'o-back', type: 'datetime-local', value: localInput(new Date(Math.ceil((Date.now() + 3 * 3_600_000) / 900_000) * 900_000)) });
+  const peopleIn = el('input', { id: 'o-people', type: 'number', min: '1', max: '60', inputmode: 'numeric', value: String(me.tourist.group_size) });
+  const err = el('div', { class: 'alert alert-error', role: 'alert', hidden: true });
+  const send = el('button', { type: 'submit', class: 'btn btn-primary btn-lg btn-block' }, icon('map'), el('span', {}, T('out_send')));
+  const form = el('form', { class: 't-panel t-form', novalidate: true },
+    el('div', { class: 'field' }, el('span', { class: 'label' }, T('out_what')), kind.node),
+    field('o-where', T('out_where'), where),
+    el('div', { class: 'field' }, el('span', { class: 'label' }, T('out_when')), when.node), laterField,
+    el('div', { class: 't-form-grid' }, field('o-back', T('out_back'), back), field('o-people', T('out_people'), peopleIn)),
+    err, send);
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    err.hidden = true;
+    const startsAt = when.value() === 'later' ? new Date(later.value) : new Date();
+    const endsAt = new Date(back.value);
+    if (!back.value || !(endsAt > startsAt)) { err.hidden = false; err.textContent = T('err_back_time'); back.focus(); return; }
+    busy(send, async () => {
+      try {
+        await tApi.post('/api/tourist/activities', {
+          kind: kind.value(), zone_id: Number(where.value), people: Number(peopleIn.value || 1),
+          starts_at: when.value() === 'later' ? startsAt.toISOString() : undefined, ends_at: endsAt.toISOString(),
+        });
+        toast(T('out_sent'));
+        await loadMe();
+        go('home');
+      } catch (e2) {
+        err.hidden = false;
+        err.textContent = e2.message;
+      }
+    });
+  });
+  page(T('out_title'), head, form, emergencyLink());
+}
+
+/** Single-choice chips (radio buttons styled as pills). */
+function pickChips(name, options, initial, onChange) {
+  const node = el('div', { class: 't-pick', role: 'radiogroup' }, options.map(([v, l]) => {
+    const input = el('input', { type: 'radio', name, value: v, checked: v === initial });
+    input.addEventListener('change', () => onChange?.(v));
+    return el('label', { class: 't-pick-chip' }, input, el('span', {}, l));
+  }));
+  return { node, value: () => node.querySelector('input:checked')?.value };
+}
+function readPref(k) {
+  try { return localStorage.getItem(k); } catch { return null; }
+}
+function writePref(k, v) {
+  try { localStorage.setItem(k, v); } catch { /* optional */ }
+}
+
 function getPosition() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null);
@@ -744,11 +930,11 @@ function getPosition() {
 function guide() {
   page(T('guide_title'),
     pageHead(T('guide_title'), T('guide_sub')),
-    el('div', { class: 't-guide-grid' }, GUIDE[lang].map(([ic, title, items], i) => el('details', { class: 't-guide', open: i === 0 ? true : null },
+    el('div', { class: 't-guide-grid' }, (GUIDE[lang] || GUIDE.en).map(([ic, title, items], i) => el('details', { class: 't-guide', open: i === 0 ? true : null },
       el('summary', {}, el('span', { class: 't-guide-icon' }, icon(ic)), el('span', { class: 't-guide-name' }, title), icon('chevron-down', 'icon icon-sm t-caret')),
       el('ul', {}, items.map((x) => el('li', {}, x)))))),
     el('section', { class: 't-panel t-phrases' }, el('h3', { class: 't-panel-title' }, icon('globe', 'icon icon-sm'), T('phrases_title')),
-      el('dl', {}, PHRASES.map(([en, sw]) => el('div', {}, el('dt', {}, sw), el('dd', {}, en))))),
+      el('dl', {}, PHRASES.map(([en, sw], i) => el('div', {}, el('dt', {}, sw), el('dd', {}, PHRASE_MEANINGS[lang]?.[i] || en))))),
     emergencyLink());
 }
 
@@ -809,7 +995,7 @@ async function trip() {
           el('div', { class: 't-account-id' }, el('span', { class: 't-avatar', 'aria-hidden': 'true' }, initials),
             el('div', {}, el('strong', {}, t.name), el('small', {}, t.phone))),
           el('dl', { class: 't-facts' },
-            el('div', {}, el('dt', {}, T('language')), el('dd', {}, lang === 'sw' ? 'Kiswahili' : 'English')),
+            el('div', {}, el('dt', {}, T('language')), el('dd', {}, LANGUAGES.find(([c]) => c === lang)?.[1] || 'English')),
             el('div', {}, el('dt', {}, T('alerts_by_sms')), el('dd', {}, t.sms_alerts ? T('on') : T('off')))),
           out),
         emergencyLink())));

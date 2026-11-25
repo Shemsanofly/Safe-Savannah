@@ -77,7 +77,8 @@ const STATUS_TXT = {
 
 async function touristMenu(db: Db, cfg: AppConfig, req: UssdRequest, phone: string): Promise<string> {
   const tourist = await getTouristByPhone(db, phone);
-  const lang = tourist?.language ?? 'en';
+  // USSD menus are in Kiswahili and English (basic phones); other app languages get English here.
+  const lang: 'en' | 'sw' = tourist?.language === 'sw' ? 'sw' : 'en';
   const t = T[lang];
   const parts = req.text === '' ? [] : req.text.split('*');
   const [choice, typeIdx, a3, a4] = parts;

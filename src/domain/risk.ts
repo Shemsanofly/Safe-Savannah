@@ -77,6 +77,11 @@ export interface RiskInput {
   localHour: number;
   /** Registered tourists who shared a location within 300 m in the last 30 min. */
   peopleNearby?: number;
+  /**
+   * Guests checked in to an activity (walking safari, game drive, picnic…) in a zone, by zone id.
+   * People there right now count as present whatever the zone's usual occupancy.
+   */
+  guestsOut?: Record<number, { people: number; label: string }>;
 }
 
 export interface RiskResult {
@@ -112,7 +117,7 @@ export function assessRisk(input: RiskInput): RiskResult {
     const d = distanceToPolygonM(input.location, z.geometry);
     const reach = Math.max(1, z.buffer_m);
     const prox = d === 0 ? 1 : d <= reach ? 0.45 + 0.55 * (1 - d / reach) : 0;
-    const pres = presenceFactor(z.occupancy, input.localHour).factor;
+    const pres = input.guestsOut?.[z.id] ? 1 : presenceFactor(z.occupancy, input.localHour).factor;
     const weight = prox * SENSITIVITY_W[z.sensitivity] * pres;
     if (!best || weight > best.weight || (weight === best.weight && d < best.d)) best = { zone: z, d, prox, weight };
   }
@@ -124,7 +129,8 @@ export function assessRisk(input: RiskInput): RiskResult {
   }
 
   const z = best.zone;
-  const pres = presenceFactor(z.occupancy, input.localHour);
+  const out = input.guestsOut?.[z.id];
+  const pres = out ? { label: `${out.label} (activity check-in)` } : presenceFactor(z.occupancy, input.localHour);
   reasons.push(best.d === 0 ? `Inside ${z.name}` : `${Math.round(best.d)} m from ${z.name} (alert distance ${z.buffer_m} m)`);
   reasons.push(`${z.name} is a ${z.sensitivity}-sensitivity area; ${pres.label}`);
 
@@ -132,8 +138,8 @@ export function assessRisk(input: RiskInput): RiskResult {
   const confFactor = conf >= 0.6 ? 1 : conf >= 0.4 ? 0.8 : 0.55;
   if (conf < 0.6) reasons.push(`Detector confidence ${Math.round(conf * 100)}% — verify the sighting`);
 
-  const peopleBoost = (input.peopleNearby ?? 0) > 0 ? 1.15 : 1;
-  if (peopleBoost > 1) reasons.push(`${input.peopleNearby} registered tourist(s) shared a location nearby recently`);
+  const peopleBoost = (input.peopleNearby ?? 0) > 0 || out ? 1.15 : 1;
+  if ((input.peopleNearby ?? 0) > 0) reasons.push(`${input.peopleNearby} registered tourist(s) shared a location nearby recently`);
 
   const score = Math.min(1, sp.danger * best.weight * confFactor * peopleBoost);
   let level = levelFor(score);
@@ -142,20 +148,4 @@ export function assessRisk(input: RiskInput): RiskResult {
   return { level, score: Math.round(score * 1000) / 1000, zone: z, distanceM: Math.round(best.d), inside: best.d === 0, reasons };
 }
 
-/** Plain-language tourist guidance for a species, in English and Swahili. */
-export function touristActions(speciesKey: string | null): { en: string[]; sw: string[] } {
-  const generic = {
-    en: ['Stay inside your vehicle, tent or room until rangers say it is safe.', 'Do not approach, feed or photograph the animal on foot.', 'Follow instructions from your guide or lodge staff.'],
-    sw: ['Baki ndani ya gari, hema au chumba chako hadi askari wa wanyamapori waseme ni salama.', 'Usimkaribie, usimlishe wala kumpiga picha mnyama ukiwa kwa miguu.', 'Fuata maelekezo ya kiongozi wako au wafanyakazi wa hoteli.'],
-  };
-  const extra: Record<string, { en: string; sw: string }> = {
-    elephant: { en: 'Give elephants at least 50 metres. Never get between a mother and her calf.', sw: 'Kaa angalau mita 50 mbali na tembo. Kamwe usikae kati ya mama na mtoto wake.' },
-    lion: { en: 'Never run from a lion. Stay in a group and wait for an escort after dark.', sw: 'Kamwe usimkimbie simba. Kaeni pamoja na subirini msindikizaji usiku.' },
-    buffalo: { en: 'Buffalo can charge without warning. Keep well clear of thick bush.', sw: 'Nyati anaweza kushambulia bila onyo. Kaa mbali na vichaka vizito.' },
-    hippo: { en: 'Keep away from the water edge, especially at dusk and night.', sw: 'Kaa mbali na ukingo wa maji, hasa jioni na usiku.' },
-    leopard: { en: 'Keep children close and stay indoors after dark.', sw: 'Weka watoto karibu na baki ndani usiku.' },
-    crocodile: { en: 'Do not stand or wash at the water edge.', sw: 'Usisimame wala kunawa kwenye ukingo wa maji.' },
-  };
-  const e = speciesKey ? extra[speciesKey] : undefined;
-  return e ? { en: [e.en, ...generic.en], sw: [e.sw, ...generic.sw] } : generic;
-}
+// What-to-do steps for travellers live in the language catalogs (src/domain/locales).

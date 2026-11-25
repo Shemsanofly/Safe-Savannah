@@ -111,6 +111,8 @@ function renderHostShell(s) {
   if (rc?.help) pills.push(pill('#/lodge', 'urgent', 'siren', `${rc.help} guest${rc.help === 1 ? ' needs' : 's need'} help`, { dot: true, pulse: true }));
   if (rc?.pending) pills.push(pill('#/lodge', 'warn', 'users', `Roll call: ${rc.pending} to answer`));
   else if (rc) pills.push(pill('#/lodge', 'ok', 'check-circle', 'All guests answered'));
+  if (o.overdue) pills.push(pill('#/lodge', 'urgent', 'clock', `${o.overdue} group${o.overdue === 1 ? '' : 's'} overdue`, { dot: true, pulse: true }));
+  if (o.escortsWaiting) pills.push(pill('#/lodge', 'warn', 'person', `${o.escortsWaiting} escort${o.escortsWaiting === 1 ? '' : 's'} waiting`, { dot: true }));
   if (o.atProperty) pills.push(pill('#/lodge', 'urgent', 'incident', 'Wildlife alert at your lodge', { dot: true, pulse: true }));
   else if (o.alerts) pills.push(pill('#/lodge', 'warn', 'incident', `${o.alerts} alert${o.alerts === 1 ? '' : 's'} in the area`));
   if (!pills.length) pills.push(pill('#/lodge', 'ok', 'check-circle', 'No alerts reported near you'));

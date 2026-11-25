@@ -718,9 +718,8 @@ dialog::backdrop { background: rgba(11, 33, 24, 0.5); }
 .t-auth-page .t-top { position: relative; padding: 22px clamp(20px, 4vw, 64px); background: transparent; color: var(--forest-900); box-shadow: none; }
 .t-auth-page .t-brand { font-size: 1.3rem; gap: 11px; }
 .t-auth-page .t-brand .logo { width: 36px; height: 36px; }
-.t-auth-page .t-lang { border: 1px solid #d8ddcf; background: #e9ebdf; padding: 4px; }
-.t-auth-page .t-lang button { color: var(--forest-700); min-height: 36px; min-width: 48px; }
-.t-auth-page .t-lang button[aria-pressed="true"] { background: var(--forest-800); color: white; box-shadow: 0 2px 5px #173a2c18; }
+.t-auth-page .t-lang { border: 1px solid #d8ddcf; background: #e9ebdf; color: var(--forest-700); }
+.t-auth-page .t-lang select { color: var(--forest-800); }
 .t-auth-page .t-main { padding: 8px clamp(20px, 4vw, 64px) 26px; }
 .t-auth-layout { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: clamp(28px, 5vw, 76px); align-items: center; }
 .t-auth-story { position: relative; display: flex; flex-direction: column; justify-content: space-between; align-self: stretch; min-height: 700px; overflow: hidden; border-radius: 28px; color: #f9f6e9; background: linear-gradient(180deg, #0b2118f5 0%, #0b2118df 45%, #0b211830 82%), url('/static/img/savanna.svg') 58% bottom / auto 100% no-repeat, var(--forest-950); box-shadow: 0 18px 45px #15332216; }
@@ -845,9 +844,11 @@ dialog::backdrop { background: rgba(11, 33, 24, 0.5); }
 .t-top-inner { display: flex; align-items: center; gap: 16px; max-width: 1120px; margin: 0 auto; padding: 10px 16px; }
 .t-brand { display: inline-flex; gap: 9px; align-items: center; font-family: var(--display); font-weight: 650; font-size: 1.1rem; color: inherit; text-decoration: none; margin-right: auto; }
 .t-brand .logo { width: 30px; height: 30px; }
-.t-lang { display: inline-flex; background: #ffffff14; border-radius: 999px; padding: 3px; flex: none; }
-.t-lang button { font: inherit; font-weight: 700; font-size: .8rem; background: none; border: 0; color: #dfe9e2; padding: 6px 12px; border-radius: 999px; cursor: pointer; min-height: 34px; min-width: 44px; }
-.t-lang button[aria-pressed="true"] { background: var(--amber-500); color: var(--forest-950); }
+.t-lang { position: relative; display: inline-flex; align-items: center; gap: 6px; background: #ffffff14; color: #dfe9e2; border-radius: 999px; padding: 0 10px; flex: none; min-height: 40px; }
+.t-lang:focus-within { outline: 2px solid var(--amber-500); outline-offset: 2px; }
+.t-lang select { appearance: none; -webkit-appearance: none; font: inherit; font-weight: 700; font-size: .85rem; background: none; border: 0; color: inherit; padding: 8px 14px 8px 0; cursor: pointer; max-width: 9.5em; outline: none; }
+.t-lang::after { content: ""; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.t-lang select option { color: #1d2a22; background: #fff; }
 .t-main { flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; padding: 18px 16px calc(104px + env(safe-area-inset-bottom)); display: grid; gap: 16px; align-content: start; }
 .t-main:focus { box-shadow: none; }
 
@@ -1506,3 +1507,31 @@ details.panel > summary::-webkit-details-marker { display: none; }
 .t-rollcall.is-help .t-rollcall-icon { background: var(--red-700); }
 .t-safety.is-allclear { border-width: 2px; border-color: var(--forest-500); }
 .t-alert.lv-clear { --lv: var(--forest-600, #2e6b51); --lv-bg: var(--forest-50); }
+.mk-group { background: #2563a6; border-radius: 10px; font-size: 12px; }
+.mk-group.is-overdue { background: var(--red-700); animation: pulse 1.6s var(--ease) infinite; }
+.lg-dot.lg-group { background: #2563a6; border-radius: 3px; }
+.panel.desk-attn { border-color: var(--amber-500); box-shadow: 0 0 0 3px rgba(212,145,42,.15); }
+
+/* ===================== traveller: escorts and going out ===================== */
+.t-plans { display: grid; gap: 10px; }
+@media (min-width: 900px) { .t-plans { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); } }
+.t-plan { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; border: 1px solid; text-decoration: none; color: inherit; }
+.t-plan .icon:last-child { margin-left: auto; flex: none; }
+.t-plan-icon { display: grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 12px; color: #fff; }
+.t-plan-text { display: grid; gap: 1px; min-width: 0; }
+.t-plan-text strong { color: var(--forest-950); }
+.t-plan-text small { color: var(--ink-muted); }
+.t-plan.is-wait { background: var(--amber-100); border-color: var(--amber-200); }
+.t-plan.is-wait .t-plan-icon { background: var(--amber-600); }
+.t-plan.is-go { background: #eaf1fa; border-color: #c4d6ee; }
+.t-plan.is-go .t-plan-icon { background: #2563a6; }
+.t-plan.is-done { background: var(--forest-50); border-color: var(--forest-200); }
+.t-plan.is-done .t-plan-icon { background: var(--forest-700); }
+.t-plan.is-late { background: var(--red-50); border-color: #efb9b1; }
+.t-plan.is-late .t-plan-icon { background: var(--red-700); }
+.t-pick { display: flex; flex-wrap: wrap; gap: 8px; }
+.t-pick-chip { position: relative; cursor: pointer; }
+.t-pick-chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.t-pick-chip span { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--line-strong); background: var(--paper); font-weight: 650; font-size: .92rem; }
+.t-pick-chip input:checked + span { background: var(--forest-800); border-color: var(--forest-800); color: #fff; }
+.t-pick-chip input:focus-visible + span { box-shadow: var(--focus); }

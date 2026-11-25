@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { handleRollCallSms, hostMayUse } from '../src/api/hospitalityRoutes.js';
+import { handleRollCallSms, hostMayUse, rollCallAnswer } from '../src/api/hospitalityRoutes.js';
 import { buildApp } from '../src/api/server.js';
 import { loadConfig } from '../src/config.js';
 import type { Db } from '../src/db/pool.js';
@@ -14,6 +14,14 @@ import { dbAvailable, freshDb, TEST_DATABASE_URL, truncateAll } from './helpers/
 const available = await dbAvailable();
 const CAMP: LatLng = [-2.45, 34.825];
 const square = (c: LatLng, half: number): LatLng[] => [offset(offset(c, half, 0), half, 90), offset(offset(c, half, 0), half, 270), offset(offset(c, half, 180), half, 270), offset(offset(c, half, 180), half, 90)];
+
+describe('roll-call SMS replies in any guest language', () => {
+  it('understands digits, English, Kiswahili and the five other guest languages', () => {
+    for (const t of ['1', 'safe', 'Salama asante', 'Sûr', 'sicher!', 'Sicuro', 'seguro', '安全，谢谢']) expect(rollCallAnswer(t)).toBe('safe');
+    for (const t of ['2', 'HELP me', 'msaada', 'Aide', 'Hilfe', 'aiuto', 'Ayuda!', '救命']) expect(rollCallAnswer(t)).toBe('help');
+    for (const t of ['', 'hello', 'maybe', '3']) expect(rollCallAnswer(t)).toBeNull();
+  });
+});
 
 describe('host access', () => {
   it('front-desk accounts may only use their own lodge endpoints', () => {

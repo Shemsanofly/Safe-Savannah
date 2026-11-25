@@ -117,6 +117,7 @@ export function mount(main, ctx) {
     }
     mapApi.drawDetections(showDetections ? data.detections : []);
     mapApi.drawIncidents(data.incidents.filter((i) => !kind || i.kind === kind));
+    mapApi.drawGroups(data.groupsOut || [], data.zones);
   }
 
   function renderQueue() {

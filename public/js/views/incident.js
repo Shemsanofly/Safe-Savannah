@@ -1,7 +1,7 @@
 // Incident detail: evidence, ownership, actions, SMS history and a chronological activity log.
 import { age, api, BOOT, clear, confirmDialog, el, fmtDateTime, fmtDuration, fmtTime, icon, initials, runAction, uid, validateRequired } from '../lib.js';
 import {
-  ACTION, CHANNEL, EMERGENCY, INCIDENT, KIND, RISK, SMS, demoBadge, SOURCE,
+  ACTION, CHANNEL, EMERGENCY, INCIDENT, KIND, RISK, SMS, demoBadge, languageName, SOURCE,
 } from '../status.js';
 import { createMap } from '../map.js';
 import * as store from '../store.js';
@@ -136,7 +136,7 @@ export function mount(main, ctx) {
           fact('Phone', e.reporter_phone ? el('a', { href: `tel:${e.reporter_phone}`, class: 'strong' }, `${e.reporter_phone} (tap to call)`) : '—'),
           t ? fact('Group size', String(t.group_size)) : null,
           t?.lodge ? fact('Staying at', t.lodge) : null,
-          t ? fact('Language', t.language === 'sw' ? 'Kiswahili' : 'English') : null,
+          t ? fact('Language', languageName(t.language)) : null,
           t?.nationality ? fact('Nationality', t.nationality) : null,
           fact('Location', e.lat !== null ? (e.zone_label || 'Shared from phone') : 'Not shared'),
           respond));

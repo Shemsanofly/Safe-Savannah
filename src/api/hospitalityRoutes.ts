@@ -12,6 +12,10 @@ import {
   regenerateCheckinCode, respondToRollCall, startManualRollCall, touristChecks, updateLodge, type LodgeRow,
 } from '../store/hospitality.js';
 import { createSos, normalizePhone, type MessagingOpts } from '../store/platform.js';
+import {
+  acceptEscort, ActivityInputSchema, activityPlaces, endActivity, EscortInputSchema, finishEscort, lodgeActivities, lodgeEscorts, requestEscort,
+  startActivity, cancelEscort,
+} from '../store/guestPlans.js';
 
 type Guard = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>;
 
@@ -26,10 +30,20 @@ export function checkinUrl(req: FastifyRequest, cfg: AppConfig, lodge: LodgeRow)
   return `${base.replace(/\/$/, '')}/t#/checkin?lodge=${encodeURIComponent(lodge.checkin_code)}`;
 }
 
+const SAFE_WORDS = ['SAFE', 'SALAMA', 'OK', '1', 'YES', 'NDIYO', 'SICHER', 'SICURO', 'SEGURO', 'SECURITE', 'SUR', 'BIEN'];
+const HELP_WORDS = ['HELP', 'MSAADA', '2', 'SOS', 'HILFE', 'AIUTO', 'AYUDA', 'AIDE', 'SECOURS'];
+/** Read a roll-call reply in any guest language: SAFE/HELP, Kiswahili, French, German, Italian, Spanish, Chinese, or 1/2. */
+export function rollCallAnswer(text: string): 'safe' | 'help' | null {
+  const t = text.trim();
+  if (/^(救命|帮助|求助)/.test(t)) return 'help';
+  if (/^(安全|平安)/.test(t)) return 'safe';
+  const word = (t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().split(/\s+/)[0] ?? '').replace(/[^A-Z0-9]/g, '');
+  return SAFE_WORDS.includes(word) ? 'safe' : HELP_WORDS.includes(word) ? 'help' : null;
+}
+
 /** Answer an SMS reply ("SAFE"/"HELP", also Kiswahili "SALAMA"/"MSAADA", or 1/2) to the latest open roll call. */
 export async function handleRollCallSms(db: Db, opts: MessagingOpts, from: string, text: string): Promise<'safe' | 'help' | 'ignored'> {
-  const word = text.trim().toUpperCase().split(/\s+/)[0] ?? '';
-  const status = ['SAFE', 'SALAMA', 'OK', '1', 'YES', 'NDIYO'].includes(word) ? 'safe' : ['HELP', 'MSAADA', '2', 'SOS'].includes(word) ? 'help' : null;
+  const status = rollCallAnswer(text);
   const phone = normalizePhone(from) ?? from;
   const open = status ? await openCheckForPhone(db, phone) : null;
   if (!status || !open) return 'ignored';
@@ -37,7 +51,7 @@ export async function handleRollCallSms(db: Db, opts: MessagingOpts, from: strin
   if (status === 'help') {
     const { incident } = await createSos(db, {
       touristId: open.tourist_id, type: 'wildlife', channel: 'sms',
-      description: `Replied HELP by SMS to the roll call at ${open.lodge_name}${text.trim().length > word.length ? `: "${text.trim().slice(0, 200)}"` : ''}`,
+      description: `Replied HELP by SMS to the roll call at ${open.lodge_name}${/\s/.test(text.trim()) ? `: "${text.trim().slice(0, 200)}"` : ''}`,
     }, opts);
     sosEventId = incident.id;
   }
@@ -73,9 +87,16 @@ export async function registerHospitalityRoutes(
   // ---------------------------------------------------------------- front desk (host / admin)
   app.get('/api/lodge', { preHandler: requireStaff }, async (req) => {
     const lodge = await lodgeFor(req);
-    const view = await lodgeConsole(db, lodge.id);
+    const [view, escorts, activities, places] = await Promise.all([lodgeConsole(db, lodge.id), lodgeEscorts(db, lodge.id), lodgeActivities(db, lodge.id), activityPlaces(db, lodge.area_id)]);
+    // How many of this lodge's guests are out in each alert's zone right now.
+    const out = new Map<number, number>();
+    for (const a of activities) if (a.status === 'out' || a.status === 'overdue') out.set(a.zone_id, (out.get(a.zone_id) ?? 0) + a.people);
     return {
       ...view,
+      alerts: view.alerts.map((a) => ({ ...a, guests_out: a.safety_zone_id ? out.get(Number(a.safety_zone_id)) ?? 0 : 0 })),
+      escorts,
+      activities,
+      places,
       checkinUrl: checkinUrl(req, cfg, lodge),
       lodges: req.operator!.role === 'admin' ? (await listLodges(db)).filter((l) => l.active).map((l) => ({ id: l.id, name: l.name })) : null,
       serverTime: new Date().toISOString(),
@@ -84,9 +105,11 @@ export async function registerHospitalityRoutes(
   // Light status for the header pill and connection check.
   app.get('/api/lodge/pulse', { preHandler: requireStaff }, async (req) => {
     const lodge = await lodgeFor(req);
-    const v = await lodgeConsole(db, lodge.id);
+    const [v, escorts, activities] = await Promise.all([lodgeConsole(db, lodge.id), lodgeEscorts(db, lodge.id), lodgeActivities(db, lodge.id)]);
     return {
       serverTime: new Date().toISOString(),
+      escortsWaiting: escorts.filter((e) => e.status === 'requested').length,
+      overdue: activities.filter((a) => a.status === 'overdue').length,
       alerts: v.alerts.length,
       atProperty: v.alerts.filter((a) => a.at_property).length,
       sosOpen: v.sos.filter((s) => s.status === 'open' || s.status === 'acknowledged').length,
@@ -117,6 +140,36 @@ export async function registerHospitalityRoutes(
     const lodge = await lodgeFor(req);
     const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
     await closeRollCall(db, id, lodge.id);
+    return { ok: true };
+  });
+
+  // Night escorts and activity check-ins, handled by the front desk.
+  const IdP = z.object({ id: z.coerce.number().int().positive() });
+  app.post('/api/lodge/escorts/:id/accept', { preHandler: requireStaff }, async (req) => {
+    const lodge = await lodgeFor(req);
+    const { escort_name } = z.object({ escort_name: z.string().trim().max(60).optional() }).parse(req.body ?? {});
+    await acceptEscort(db, lodge.id, IdP.parse(req.params).id, req.operator!, escort_name);
+    return { ok: true };
+  });
+  app.post('/api/lodge/escorts/:id/done', { preHandler: requireStaff }, async (req) => {
+    const lodge = await lodgeFor(req);
+    await finishEscort(db, lodge.id, IdP.parse(req.params).id);
+    return { ok: true };
+  });
+  app.post('/api/lodge/activities', { preHandler: requireStaff }, async (req, reply) => {
+    const lodge = await lodgeFor(req);
+    const body = ActivityInputSchema.extend({ tourist_id: z.coerce.number().int().positive() }).parse(req.body);
+    const guest = (await db.query<{ id: number; group_size: number }>(
+      `SELECT id, group_size FROM tourists WHERE id = $1 AND lodge_id = $2 AND active AND current_date BETWEEN trip_start AND trip_end`, [body.tourist_id, lodge.id],
+    )).rows[0];
+    if (!guest) throw new DomainError(404, 'not_guest', 'That guest is not staying at this lodge tonight');
+    const a = await startActivity(db, { touristId: guest.id, lodgeId: lodge.id, areaId: lodge.area_id, groupSize: guest.group_size, createdBy: req.operator!.id, input: body });
+    return reply.code(201).send({ activity: a });
+  });
+  app.post('/api/lodge/activities/:id/:how', { preHandler: requireStaff }, async (req) => {
+    const lodge = await lodgeFor(req);
+    const { id, how } = z.object({ id: z.coerce.number().int().positive(), how: z.enum(['back', 'cancel']) }).parse(req.params);
+    await endActivity(db, id, { lodgeId: lodge.id }, how === 'back' ? 'returned' : 'cancelled');
     return { ok: true };
   });
 
@@ -152,6 +205,27 @@ export async function registerHospitalityRoutes(
     await checkInTourist(db, req.tourist!.id, lodge, body.trip_end);
     return { lodge: { id: lodge.id, name: lodge.name, area_name: lodge.area_name } };
   });
+  app.get('/api/tourist/places', { preHandler: requireTourist }, async (req) => ({ places: await activityPlaces(db, req.tourist!.area_id) }));
+  app.post('/api/tourist/escort', { preHandler: requireTourist }, async (req, reply) => {
+    const parsed = EscortInputSchema.safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid', field: parsed.error.issues[0]?.path.join('.'), message: parsed.error.issues[0]?.message });
+    return reply.code(201).send({ escort: await requestEscort(db, req.tourist!, parsed.data) });
+  });
+  app.post('/api/tourist/escort/:id/cancel', { preHandler: requireTourist }, async (req) => {
+    await cancelEscort(db, req.tourist!.id, z.object({ id: z.coerce.number().int().positive() }).parse(req.params).id);
+    return { ok: true };
+  });
+  app.post('/api/tourist/activities', { preHandler: requireTourist }, async (req, reply) => {
+    const t = req.tourist!;
+    const a = await startActivity(db, { touristId: t.id, lodgeId: t.lodge_id, areaId: t.area_id, groupSize: t.group_size, createdBy: 'tourist', input: ActivityInputSchema.parse(req.body) });
+    return reply.code(201).send({ activity: a });
+  });
+  app.post('/api/tourist/activities/:id/:how', { preHandler: requireTourist }, async (req) => {
+    const { id, how } = z.object({ id: z.coerce.number().int().positive(), how: z.enum(['back', 'cancel']) }).parse(req.params);
+    await endActivity(db, id, { touristId: req.tourist!.id }, how === 'back' ? 'returned' : 'cancelled');
+    return { ok: true };
+  });
+
   app.post('/api/tourist/checks/:id', { preHandler: requireTourist }, async (req) => {
     const { id } = z.object({ id: z.coerce.number().int().positive() }).parse(req.params);
     const body = z

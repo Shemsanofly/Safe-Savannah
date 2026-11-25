@@ -1,5 +1,6 @@
 // People: rangers and admins (alert routing, roles, PINs) and tourist accounts. Admins only.
 import { api, BOOT, clear, confirmDialog, el, fmtDate, icon, initials, lodgeToday, runAction, toast, validateRequired } from '../lib.js';
+import { languageName } from '../status.js';
 
 export function mount(main, ctx) {
   if (BOOT.operator.role !== 'admin') { main.append(el('p', { role: 'alert' }, 'Only admins can add or manage staff.')); return {}; }
@@ -186,7 +187,7 @@ export function mount(main, ctx) {
         return [t.sos_count ? el('a', { class: 'btn btn-sm', href: `#/incidents?kind=sos&q=${encodeURIComponent(t.phone)}` }, icon('siren', 'icon icon-sm'), `${t.sos_count} SOS`) : null, btn, status];
       };
       const short = (d) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-      const tripText = (t) => `${short(t.trip_start)} – ${short(t.trip_end)} · ${t.group_size} ${t.group_size === 1 ? 'person' : 'people'} · ${t.language === 'sw' ? 'Kiswahili' : 'English'}`;
+      const tripText = (t) => `${short(t.trip_start)} – ${short(t.trip_end)} · ${t.group_size} ${t.group_size === 1 ? 'person' : 'people'} · ${languageName(t.language)}`;
       const cards = el('ul', { class: 'person-list inc-list' }, list.map((t) => {
         const st = tripState(t);
         return el('li', { class: `person-row${t.active ? '' : ' is-off'}` },
@@ -205,7 +206,7 @@ export function mount(main, ctx) {
           return el('tr', { class: t.active ? null : 'muted' },
             el('td', {}, el('div', { class: 'cell-stack' }, el('strong', {}, t.name, t.demo ? el('span', { class: 'inc-tag small' }, ' Demo') : null), el('a', { href: `tel:${t.phone}`, class: 'small' }, t.phone))),
             el('td', {}, el('div', { class: 'cell-stack' }, areaName(t.area_id), el('span', { class: 'small muted' }, t.lodge || ''))),
-            el('td', {}, el('div', { class: 'cell-stack' }, `${fmtDate(t.trip_start)} – ${fmtDate(t.trip_end)}`, el('span', { class: 'small muted' }, `${t.group_size} ${t.group_size === 1 ? 'person' : 'people'} · ${t.language === 'sw' ? 'Kiswahili' : 'English'}${t.sms_alerts ? '' : ' · SMS off'}`))),
+            el('td', {}, el('div', { class: 'cell-stack' }, `${fmtDate(t.trip_start)} – ${fmtDate(t.trip_end)}`, el('span', { class: 'small muted' }, `${t.group_size} ${t.group_size === 1 ? 'person' : 'people'} · ${languageName(t.language)}${t.sms_alerts ? '' : ' · SMS off'}`))),
             el('td', {}, el('span', { class: `person-pill tone-${st[1]}` }, st[0])),
             el('td', {}, el('div', { class: 'row end' }, actions(t))));
         }))));

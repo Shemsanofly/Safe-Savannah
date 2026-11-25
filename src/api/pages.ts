@@ -180,10 +180,12 @@ export function touristPage(opts: { emergencyLine: string; demoNotice?: string |
     <div class="t-top-inner">
       <a class="t-brand" href="#/">${icon('logo', 'logo')}<span>Safe Savannah</span></a>
       <nav class="t-nav" id="t-nav" aria-label="Main" hidden></nav>
-      <div class="t-lang" role="group" aria-label="Language / Lugha">
-        <button type="button" data-lang="en" aria-pressed="true">EN</button>
-        <button type="button" data-lang="sw" aria-pressed="false">SW</button>
-      </div>
+      <label class="t-lang">${icon('globe', 'icon icon-sm')}<span class="sr-only">Language / Lugha</span>
+        <select id="t-lang-select">
+          <option value="en">English</option><option value="sw">Kiswahili</option><option value="fr">Français</option><option value="de">Deutsch</option>
+          <option value="it">Italiano</option><option value="es">Español</option><option value="zh">中文</option>
+        </select>
+      </label>
     </div>
   </header>
   ${opts.demoNotice ? `<div class="environment-banner" role="note">${icon('flask')}<span>${esc(opts.demoNotice)}</span></div>` : ''}

@@ -2,11 +2,13 @@ import { z } from 'zod';
 import { withTx, type Db, type DbClient, type Queryable } from '../db/pool.js';
 import { eventRef } from '../domain/eventRef.js';
 import { haversineM, isValidPolygon, type LatLng } from '../domain/geo.js';
-import { assessRisk, speciesProfile, touristActions, type RiskLevel, type ZoneInput } from '../domain/risk.js';
+import { assessRisk, speciesProfile, type RiskLevel, type ZoneInput } from '../domain/risk.js';
 import { DomainError, type EventRow } from './events.js';
 import { hashPin, verifyPin } from './operators.js';
 import { enqueue, type Job } from './outboxJobs.js';
-import { rollCallsForIncident, touristChecks } from './hospitality.js';
+import { rollCallReasons, rollCallsForIncident, touristChecks } from './hospitality.js';
+import { alertContent, catalog, LANGS, speciesName } from '../domain/i18n.js';
+import { ACTIVITY_LABEL, liveActivities, touristActivity, touristEscort } from './guestPlans.js';
 
 // ============================================================ places
 export interface AreaRow { id: string; name: string; region: string; center_lat: number; center_lng: number; zoom: number }
@@ -102,7 +104,7 @@ export async function upsertCameraStation(db: Queryable, c: z.infer<typeof Camer
 
 // ============================================================ tourists
 export interface TouristRow {
-  id: number; name: string; phone: string; language: 'en' | 'sw'; nationality: string | null; area_id: string; lodge: string | null; lodge_id: string | null;
+  id: number; name: string; phone: string; language: string; nationality: string | null; area_id: string; lodge: string | null; lodge_id: string | null;
   trip_start: string; trip_end: string; group_size: number; emergency_contact: string | null; sms_alerts: boolean;
   last_lat: number | null; last_lng: number | null; last_located_at: Date | null; active: boolean; demo: boolean; created_at: Date;
 }
@@ -124,7 +126,7 @@ export const TouristRegisterSchema = z
     name: z.string().trim().min(2, 'Enter your name').max(80),
     phone: z.string().trim().min(6).max(20),
     pin: z.string().trim().regex(/^\d{4,12}$/, 'PIN must be 4–12 digits'),
-    language: z.enum(['en', 'sw']).default('en'),
+    language: z.enum(LANGS).default('en'),
     nationality: z.string().trim().max(60).optional().nullable(),
     area_id: z.string().min(1, 'Choose your destination'),
     lodge: z.string().trim().max(100).optional().nullable(),
@@ -170,7 +172,7 @@ export async function getTouristByPhone(db: Queryable, phone: string): Promise<T
 }
 
 export const TouristUpdateSchema = z.object({
-  language: z.enum(['en', 'sw']).optional(),
+  language: z.enum(LANGS).optional(),
   area_id: z.string().optional(),
   lodge: z.string().trim().max(100).optional().nullable(),
   trip_start: isoDate.optional(),
@@ -301,6 +303,17 @@ export async function processDetection(db: Db, d: DetectionInput, opts: Messagin
       );
       peopleNearby = located.rows.filter((t) => haversineM(location, [t.last_lat, t.last_lng]) <= 300).length;
     }
+    // Guests checked in to an activity (walking safari, game drive…) are really there, whatever the usual occupancy.
+    const guestsOut: Record<number, { people: number; label: string }> = {};
+    if (areaId) {
+      const until = (t: Date) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: opts.timeZone }).format(t);
+      for (const a of await liveActivities(c, areaId)) {
+        const cur = guestsOut[a.zone_id] ?? { people: 0, label: '' };
+        cur.people += a.people;
+        cur.label = `${cur.people} guest${cur.people === 1 ? '' : 's'} out here now on a ${ACTIVITY_LABEL[a.kind as keyof typeof ACTIVITY_LABEL] ?? 'activity'}, back by ${until(a.ends_at)}`;
+        guestsOut[a.zone_id] = cur;
+      }
+    }
     const risk = assessRisk({
       species: d.species,
       confidence: d.confidence,
@@ -308,6 +321,7 @@ export async function processDetection(db: Db, d: DetectionInput, opts: Messagin
       zones: zones.map<ZoneInput>((z) => ({ id: z.id, name: z.name, sensitivity: z.sensitivity, occupancy: z.occupancy, buffer_m: z.buffer_m, geometry: z.geometry })),
       localHour: localHour(opts.timeZone, d.capturedAt),
       peopleNearby,
+      guestsOut,
     });
 
     const det = await c.query<{ id: number }>(
@@ -379,7 +393,7 @@ export async function processDetection(db: Db, d: DetectionInput, opts: Messagin
       await notifyWildlife(c, incident, risk.level, sp, where, zone.name, areaId, source === 'simulated', opts, escalated);
     } else if (riskAtLeast(incident.risk_level, 'high') && !(await c.query('SELECT 1 FROM guest_checks WHERE event_id = $1', [incident.id])).rowCount) {
       // A lodge that has not checked on its guests for this incident yet (e.g. it opened before the lodge joined) does so now.
-      await rollCallsForIncident(c, incident, { en: `${sp.name_en} near ${zone.name}`, sw: `${sp.name_sw} karibu na ${zone.name}` }, source === 'simulated', opts);
+      await rollCallsForIncident(c, incident, rollCallReasons(sp.key, zone.name), source === 'simulated', opts);
     }
     return { detectionId, risk, incident, incidentCreated: created, escalated };
   });
@@ -407,29 +421,23 @@ async function notifyWildlife(
     }
   }
   if (areaId && riskAtLeast(level, 'medium')) {
-    const actions = touristActions(sp.key);
     const lvl = level === 'critical' ? 'danger' : level === 'high' ? 'warning' : 'advisory';
-    const titleEn = `${sp.name_en} reported near ${place}`;
-    const titleSw = `${sp.name_sw} ameonekana karibu na ${place}`;
+    // Stored in every guest language; title_en/title_sw stay for staff views and older clients.
+    const content = alertContent(sp.key, place, simulated);
     await c.query(
-      `INSERT INTO tourist_alerts (area_id, event_id, level, title_en, title_sw, body_en, body_sw, actions_en, actions_sw, place, expires_at, demo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, now() + interval '6 hours', $11)`,
-      [areaId, e.id, lvl, titleEn + (simulated ? ' (simulated test)' : ''), titleSw + (simulated ? ' (jaribio)' : ''),
-        `Rangers have been alerted and are checking. ${sp.name_en}s can be dangerous to people on foot.`,
-        `Askari wa wanyamapori wamejulishwa na wanafuatilia. ${sp.name_sw} anaweza kuwa hatari kwa watu wanaotembea kwa miguu.`,
-        JSON.stringify(actions.en), JSON.stringify(actions.sw), place, e.demo],
+      `INSERT INTO tourist_alerts (area_id, event_id, level, title_en, title_sw, body_en, body_sw, actions_en, actions_sw, content, place, expires_at, demo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, now() + interval '6 hours', $12)`,
+      [areaId, e.id, lvl, content.en.title, content.sw.title, content.en.body, content.sw.body,
+        JSON.stringify(content.en.actions), JSON.stringify(content.sw.actions), JSON.stringify(content), place, e.demo],
     );
     if (riskAtLeast(level, 'high')) {
       // Lodges whose own zone is at risk ask every guest "Are you safe?"; that SMS replaces the general warning for them.
-      const inRollCall = await rollCallsForIncident(c, e, { en: `${sp.name_en} near ${place}`, sw: `${sp.name_sw} karibu na ${place}` }, simulated, opts);
+      const inRollCall = await rollCallsForIncident(c, e, rollCallReasons(sp.key, place), simulated, opts);
       for (const t of await touristsForAlert(c, areaId, opts.includeDemoRecipients !== false)) {
         if (inRollCall.has(t.id)) continue;
         jobs.push({
           kind: `alert${suffix}`, alias: `tourist:${t.id}`, to: t.phone, recipientKind: 'tourist',
-          body:
-            t.language === 'sw'
-              ? `Safe Savannah${tag}${simulated ? ' (JARIBIO)' : ''}: ${sp.name_sw} karibu na ${place}. Baki ndani ya gari, hema au chumba na fuata maelekezo ya wafanyakazi. Dharura: ${opts.emergencyLine}`
-              : `Safe Savannah${tag}${sim}: ${sp.name_en} near ${place}. Stay inside your vehicle, tent or room and follow staff instructions. Emergency: ${opts.emergencyLine}`,
+          body: catalog(t.language).alertSms({ tag, simulated, animal: speciesName(t.language, sp.key), place, line: opts.emergencyLine }),
         });
       }
     }
@@ -508,11 +516,8 @@ export async function createSos(db: Db, input: SosInput, opts: MessagingOpts): P
         body: `Safe Savannah emergency. ${label} reported by ${who} at ${place}. Incident ${ref.replace('-', ' ')}. Please respond and coordinate by radio.` });
     }
     if (phone && (opts.includeDemoRecipients !== false || !tourist?.demo)) {
-      const sw = tourist?.language === 'sw';
       jobs.push({ kind: 'sos_received', alias: tourist ? `tourist:${tourist.id}` : `caller:${phone}`, to: phone, recipientKind: 'tourist',
-        body: sw
-          ? `Safe Savannah: Tumepokea ombi lako la dharura (${ref}). Askari wamejulishwa. Ikiwezekana piga pia ${opts.emergencyLine}.`
-          : `Safe Savannah: We received your SOS (${ref}). Rangers have been alerted. If you can, also call ${opts.emergencyLine}.` });
+        body: catalog(tourist?.language).sosReceived(ref, opts.emergencyLine) });
     }
     await enqueue(c, e.id, jobs);
     return { incident: e, duplicate: false };
@@ -526,17 +531,14 @@ export async function notifyReporterOfStatus(db: Db, eventId: number, status: 'r
     if (!e || e.kind !== 'sos' || !e.reporter_phone) return;
     const lang = e.tourist_id ? (await c.query<{ language: string }>('SELECT language FROM tourists WHERE id = $1', [e.tourist_id])).rows[0]?.language : 'en';
     const ref = eventRef(e.id);
-    const body =
-      status === 'responding'
-        ? lang === 'sw' ? `Safe Savannah ${ref}: Askari ${rangerName} anashughulikia ombi lako. Kaa mahali salama.` : `Safe Savannah ${ref}: Ranger ${rangerName} is responding to your SOS. Stay somewhere safe if you can.`
-        : lang === 'sw' ? `Safe Savannah ${ref}: Ombi lako la dharura limefungwa na ${rangerName}.` : `Safe Savannah ${ref}: Your SOS has been marked resolved by ${rangerName}.`;
+    const body = status === 'responding' ? catalog(lang).sosResponding(ref, rangerName) : catalog(lang).sosResolved(ref, rangerName);
     await enqueue(c, eventId, [{ kind: `status_${status}`, alias: e.tourist_id ? `tourist:${e.tourist_id}` : `caller:${e.reporter_phone}`, to: e.reporter_phone, recipientKind: 'tourist', body }]);
   });
 }
 
 // ============================================================ read models
 export async function mapData(db: Queryable, opts: { areaId?: string; hours?: number } = {}) {
-  const [areas, zones, cameras, incidents, detections] = await Promise.all([
+  const [areas, zones, cameras, incidents, detections, groupsOut] = await Promise.all([
     listAreas(db),
     listZones(db, { areaId: opts.areaId }),
     listCameras(db),
@@ -556,8 +558,13 @@ export async function mapData(db: Queryable, opts: { areaId?: string; hours?: nu
         ORDER BY d.captured_at DESC LIMIT 300`,
       [opts.hours ?? 6, opts.areaId ?? null],
     ),
+    liveActivities(db, opts.areaId ?? null),
   ]);
-  return { areas, zones, cameras, incidents: incidents.rows.map((i: { id: number }) => ({ ...i, ref: eventRef(i.id) })), detections: detections.rows };
+  return {
+    areas, zones, cameras, incidents: incidents.rows.map((i: { id: number }) => ({ ...i, ref: eventRef(i.id) })), detections: detections.rows,
+    // Guests checked in to an activity (shown to rangers as groups on the map; names stay with the lodge).
+    groupsOut: groupsOut.map((a) => ({ id: a.id, zone_id: a.zone_id, zone_name: a.zone_name, kind: a.kind, people: a.people, ends_at: a.ends_at, status: a.status, lodge_name: a.lodge_name })),
+  };
 }
 
 export const DetectionFiltersSchema = z.object({
@@ -587,7 +594,7 @@ export async function listDetections(db: Queryable, f: z.infer<typeof DetectionF
 
 /** Everything a tourist's home screen needs. */
 export async function touristFeed(db: Queryable, t: TouristRow) {
-  const [area, alerts, active, sos, checks] = await Promise.all([
+  const [area, alerts, active, sos, checks, escort, activity] = await Promise.all([
     db.query<AreaRow>('SELECT * FROM areas WHERE id = $1', [t.area_id]),
     db.query(
       `SELECT a.id, a.level, a.title_en, a.title_sw, a.body_en, a.body_sw, a.actions_en, a.actions_sw, a.place, a.created_at, a.expires_at, a.event_id,
@@ -607,6 +614,8 @@ export async function touristFeed(db: Queryable, t: TouristRow) {
       [t.id],
     ),
     touristChecks(db, t.id),
+    touristEscort(db, t.id),
+    touristActivity(db, t.id),
   ]);
   return {
     area: area.rows[0] ?? null,
@@ -618,6 +627,8 @@ export async function touristFeed(db: Queryable, t: TouristRow) {
     sos: sos.rows.map((s: { id: number }) => ({ ...s, ref: eventRef(s.id) })),
     // Open "Are you safe?" requests from the traveller's lodge.
     checks,
+    escort,
+    activity,
   };
 }
 

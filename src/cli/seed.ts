@@ -69,9 +69,9 @@ const TOURISTS = [
   { name: 'Amina Hassan', phone: '+255765000203', lang: 'sw', nat: 'Tanzania', area: 'tarangire-river', lodge: 'Riverside lodge', group: 3 },
   { name: 'Liam Chen', phone: '+255765000204', lang: 'en', nat: 'Canada', area: 'tarangire-river', lodge: 'Riverside lodge', group: 1 },
   { name: 'Grace Wanjiru', phone: '+255765000205', lang: 'sw', nat: 'Kenya', area: 'ngorongoro-crater', lodge: 'Crater-rim lodge', group: 2 },
-  { name: 'Sofia Rossi', phone: '+255765000206', lang: 'en', nat: 'Italy', area: 'ngorongoro-crater', lodge: 'Crater-rim lodge', group: 5 },
+  { name: 'Sofia Rossi', phone: '+255765000206', lang: 'it', nat: 'Italy', area: 'ngorongoro-crater', lodge: 'Crater-rim lodge', group: 5 },
   // More guests at Seronera tented camp, so the front-desk roll call demo looks like a real night at a camp.
-  { name: 'Lucas Martin', phone: '+255765000207', lang: 'en', nat: 'France', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 2 },
+  { name: 'Lucas Martin', phone: '+255765000207', lang: 'fr', nat: 'France', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 2 },
   { name: 'Aisha Mwakyusa', phone: '+255765000208', lang: 'sw', nat: 'Tanzania', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 3 },
   { name: 'Hannah Becker', phone: '+255765000209', lang: 'en', nat: 'Germany', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 1 },
   { name: 'Kenji Watanabe', phone: '+255765000210', lang: 'en', nat: 'Japan', area: 'serengeti-seronera', lodge: 'Seronera tented camp', group: 2 },

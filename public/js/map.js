@@ -40,7 +40,7 @@ export async function createMap(container, { center = [-3.2, 35.3], zoom = 7 } =
       }
     })
     .addTo(map);
-  const layers = { zones: L.layerGroup().addTo(map), cameras: L.layerGroup().addTo(map), detections: L.layerGroup().addTo(map), incidents: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map) };
+  const layers = { zones: L.layerGroup().addTo(map), cameras: L.layerGroup().addTo(map), detections: L.layerGroup().addTo(map), incidents: L.layerGroup().addTo(map), groups: L.layerGroup().addTo(map), draft: L.layerGroup().addTo(map) };
   const ro = new ResizeObserver(() => map.invalidateSize());
   ro.observe(node);
 
@@ -96,6 +96,27 @@ export async function createMap(container, { center = [-3.2, 35.3], zoom = 7 } =
         m.addTo(layers.incidents);
       }
     },
+    /** Guests checked in to an activity: one marker per zone, at the zone's centre, with the head count. */
+    drawGroups(groups, zones) {
+      layers.groups.clearLayers();
+      const byZone = new Map();
+      for (const g of groups) {
+        const cur = byZone.get(g.zone_id) ?? { people: 0, overdue: false, items: [] };
+        cur.people += g.people;
+        cur.overdue ||= g.status === 'overdue';
+        cur.items.push(g);
+        byZone.set(g.zone_id, cur);
+      }
+      for (const [zoneId, info] of byZone) {
+        const z = zones.find((x) => x.id === zoneId);
+        if (!z?.geometry?.length) continue;
+        const c = z.geometry.reduce((a, p) => [a[0] + p[0] / z.geometry.length, a[1] + p[1] / z.geometry.length], [0, 0]);
+        const lines = info.items.map((g) => `${g.people} ${g.people === 1 ? 'guest' : 'guests'} · ${escapeHtml(g.kind.replace('_', ' '))} · back by ${fmtDateTime(g.ends_at)}${g.status === 'overdue' ? ' · <strong>OVERDUE</strong>' : ''}${g.lodge_name ? ` · ${escapeHtml(g.lodge_name)}` : ''}`);
+        L.marker(c, { icon: divIcon(`mk-group ${info.overdue ? 'is-overdue' : ''}`, null, 30, String(info.people)), title: `${info.people} guests out at ${z.name}`, zIndexOffset: 500 })
+          .bindPopup(`<strong>Guests out: ${escapeHtml(z.name)}</strong><br>${lines.join('<br>')}`)
+          .addTo(layers.groups);
+      }
+    },
     fitTo(points) {
       const pts = points.filter((p) => p && Number.isFinite(p[0]));
       if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15), { maxZoom: 15 });
@@ -114,5 +135,6 @@ export function legend() {
     el('span', {}, el('i', { class: 'lg-dot lg-hi' }), 'High'),
     el('span', {}, el('i', { class: 'lg-dot lg-me' }), 'Medium'),
     el('span', {}, icon('siren', 'icon icon-sm'), 'SOS'),
-    el('span', {}, icon('camera', 'icon icon-sm'), 'Camera'));
+    el('span', {}, icon('camera', 'icon icon-sm'), 'Camera'),
+    el('span', {}, el('i', { class: 'lg-dot lg-group' }), 'Guests out'));
 }

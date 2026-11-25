@@ -155,3 +155,7 @@ export function incidentItem(i, { areaName = i.area_name, when = `${age(i.opened
     el('span', { class: `inc-status tone-${status[1]}` }, status[0]),
     actions ? el('div', { class: 'inc-actions' }, actions) : null);
 }
+
+/** Guest languages, by the code stored on the tourist. */
+export const LANGUAGE = { en: 'English', sw: 'Kiswahili', fr: 'Français', de: 'Deutsch', it: 'Italiano', es: 'Español', zh: '中文' };
+export const languageName = (code) => LANGUAGE[code] || 'English';
